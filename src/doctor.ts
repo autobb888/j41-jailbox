@@ -104,7 +104,7 @@ export async function runDoctor(): Promise<void> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
     const relayUrl = process.env.J41_API_URL || 'https://api.autobb.app';
-    const response = await fetch(`${relayUrl}/health`, {
+    const response = await fetch(`${relayUrl}/v1/health`, {
       signal: controller.signal,
     });
     clearTimeout(timer);
