@@ -82,7 +82,7 @@ export async function runDoctor(): Promise<void> {
 
   // 6. SovGuard API reachable
   const config = readConfig();
-  const apiUrl = config.sovguard_api_url || 'https://safechat.autobb.app';
+  const apiUrl = config.sovguard_api_url || 'https://api.sovguard.io';
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
@@ -103,7 +103,7 @@ export async function runDoctor(): Promise<void> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
-    const relayUrl = process.env.J41_API_URL || 'https://api.autobb.app';
+    const relayUrl = process.env.J41_API_URL || 'https://api.junction41.io';
     const response = await fetch(`${relayUrl}/v1/health`, {
       signal: controller.signal,
     });

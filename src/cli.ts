@@ -20,7 +20,7 @@ import { resolveCredentials, writeConfig, DEFAULT_SOVGUARD_URL } from './config.
 
 import { createInterface } from 'readline';
 
-const J41_API_URL = process.env.J41_API_URL || 'https://api.autobb.app';
+const J41_API_URL = process.env.J41_API_URL || 'https://api.junction41.io';
 
 export function parseArgs(argv: string[]): WorkspaceConfig {
   const program = new Command();

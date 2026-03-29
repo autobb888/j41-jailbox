@@ -62,7 +62,7 @@
 
 ## 5. Health Check Endpoint
 
-**What j41-connect now does:** `j41-connect doctor` checks if the relay is reachable by hitting `GET /health` on `https://api.autobb.app`.
+**What j41-connect now does:** `j41-connect doctor` checks if the relay is reachable by hitting `GET /health` on `https://api.junction41.io`.
 
 **What we need from the relay:**
 - Confirm there is a `/health` endpoint (currently returns 404 in testing)

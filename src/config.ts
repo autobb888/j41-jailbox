@@ -13,7 +13,7 @@ import type { SovGuardConfig } from './sovguard.js';
 
 const CONFIG_DIR = join(process.env.HOME || '~', '.j41');
 const CONFIG_FILE = join(CONFIG_DIR, 'config');
-const DEFAULT_SOVGUARD_URL = 'https://safechat.autobb.app';
+const DEFAULT_SOVGUARD_URL = 'https://api.sovguard.io';
 
 interface ConfigValues {
   sovguard_api_key?: string;
