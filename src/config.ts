@@ -46,7 +46,7 @@ export function readConfig(): ConfigValues {
 
     return values;
   } catch {
-    console.warn(chalk.yellow('⚠ ~/.j41/config is corrupt. Run \'j41-connect config set\' to reconfigure.'));
+    console.warn(chalk.yellow('⚠ ~/.j41/config is corrupt. Run \'j41-jailbox config set\' to reconfigure.'));
     return {};
   }
 }
@@ -58,7 +58,7 @@ export function writeConfig(values: ConfigValues): void {
 
   const lines = [
     '# ~/.j41/config',
-    '# Created by j41-connect. Mode 0600.',
+    '# Created by j41-jailbox. Mode 0600.',
   ];
 
   if (values.sovguard_api_key) {
@@ -146,7 +146,7 @@ export function resolveCredentials(cliFlags: {
 }
 
 /**
- * Handle `j41-connect config <subcommand>` — called from index.ts pre-parse.
+ * Handle `j41-jailbox config <subcommand>` — called from index.ts pre-parse.
  */
 function readSecret(prompt: string): Promise<string> {
   return new Promise((resolve) => {
@@ -256,7 +256,7 @@ export async function handleConfigCommand(args: string[]): Promise<void> {
     }
 
   } else {
-    console.log('Usage: j41-connect config <set|show|clear>');
+    console.log('Usage: j41-jailbox config <set|show|clear>');
     console.log('');
     console.log('  set    Configure SovGuard credentials (masked input)');
     console.log('  show   Display current configuration');

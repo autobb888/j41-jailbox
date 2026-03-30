@@ -50,7 +50,7 @@ async function handleMessage(msg: any): Promise<any> {
       result: {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {} },
-        serverInfo: { name: 'j41-connect-mcp', version: '0.1.0' },
+        serverInfo: { name: 'j41-jailbox-mcp', version: '0.1.0' },
       },
     };
   }

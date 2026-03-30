@@ -1,5 +1,5 @@
 /**
- * j41-connect doctor — diagnose setup issues
+ * j41-jailbox doctor — diagnose setup issues
  */
 
 import { execSync } from 'child_process';
@@ -15,7 +15,7 @@ interface CheckResult {
 }
 
 export async function runDoctor(): Promise<void> {
-  console.log(chalk.cyan('\nj41-connect doctor\n'));
+  console.log(chalk.cyan('\nj41-jailbox doctor\n'));
 
   const checks: CheckResult[] = [];
 
@@ -69,7 +69,7 @@ export async function runDoctor(): Promise<void> {
     checks.push({
       name: 'SovGuard API key',
       status: hasKey ? 'pass' : 'warn',
-      message: hasKey ? 'configured' : 'not set — run `j41-connect config set`',
+      message: hasKey ? 'configured' : 'not set — run `j41-jailbox config set`',
     });
     checks.push({
       name: 'Encryption key',
@@ -77,7 +77,7 @@ export async function runDoctor(): Promise<void> {
       message: hasEnc ? 'configured (E2E encryption enabled)' : 'not set (optional)',
     });
   } else {
-    checks.push({ name: 'Config file', status: 'warn', message: 'not found — run `j41-connect config set`' });
+    checks.push({ name: 'Config file', status: 'warn', message: 'not found — run `j41-jailbox config set`' });
   }
 
   // 6. SovGuard API reachable
@@ -132,7 +132,7 @@ export async function runDoctor(): Promise<void> {
 
   console.log('');
   if (hasFailures) {
-    console.log(chalk.red('Some checks failed. Fix the issues above before running j41-connect.'));
+    console.log(chalk.red('Some checks failed. Fix the issues above before running j41-jailbox.'));
   } else {
     console.log(chalk.green('All checks passed. Ready to connect.'));
   }

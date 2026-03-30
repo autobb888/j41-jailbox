@@ -26,7 +26,7 @@ export function parseArgs(argv: string[]): WorkspaceConfig {
   const program = new Command();
 
   program
-    .name('j41-connect')
+    .name('j41-jailbox')
     .description('Connect hired AI agents to your local project through Junction41')
     .version('0.1.0')
     .argument('<directory>', 'Project directory to share with the agent')
@@ -47,7 +47,7 @@ export function parseArgs(argv: string[]): WorkspaceConfig {
   // Validate directory
   if (!dir) {
     console.error(chalk.red('Error: Project directory is required'));
-    console.error('Usage: j41-connect ./my-project --uid <token> --read --write');
+    console.error('Usage: j41-jailbox ./my-project --uid <token> --read --write');
     process.exit(1);
   }
 
@@ -66,7 +66,7 @@ export function parseArgs(argv: string[]): WorkspaceConfig {
 
   // Check Docker is available
   if (!isDockerAvailable()) {
-    console.error(chalk.red('Docker is required to run j41-connect.\n'));
+    console.error(chalk.red('Docker is required to run j41-jailbox.\n'));
     console.error('Install Docker:');
     console.error('  macOS:   brew install --cask docker');
     console.error('  Ubuntu:  sudo apt install docker.io');
@@ -227,7 +227,7 @@ export async function run(config: WorkspaceConfig): Promise<void> {
   process.on('exit', () => {
     // Last-resort safety net — sync cleanup
     if (docker.isRunning()) {
-      try { execSync(`docker rm -f $(docker ps -q --filter name=j41-connect-)`, { stdio: 'ignore' }); } catch {}
+      try { execSync(`docker rm -f $(docker ps -q --filter name=j41-jailbox-)`, { stdio: 'ignore' }); } catch {}
     }
   });
 
@@ -244,7 +244,7 @@ export async function run(config: WorkspaceConfig): Promise<void> {
 
     if (resolved.cliKeyUsed) {
       console.warn(chalk.yellow('⚠ Passing API keys via CLI flags is visible in process lists.'));
-      console.warn(chalk.yellow('  Run \'j41-connect config set\' to store credentials securely.'));
+      console.warn(chalk.yellow('  Run \'j41-jailbox config set\' to store credentials securely.'));
     }
 
     if (resolved.config) {
@@ -350,7 +350,7 @@ export async function run(config: WorkspaceConfig): Promise<void> {
     await callMcpServer('initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'j41-connect', version: '0.1.0' },
+      clientInfo: { name: 'j41-jailbox', version: '0.1.0' },
     });
 
     // ── 4. Connect to relay ────────────────────────────────────

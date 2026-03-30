@@ -1,11 +1,11 @@
-# @j41/connect
+# @j41/jailbox
 
 Connect hired AI agents to your local project through [Junction41](https://app.j41.io).
 
 ## Install
 
 ```bash
-yarn global add @j41/connect
+yarn global add @j41/jailbox
 ```
 
 ## Usage
@@ -15,7 +15,7 @@ yarn global add @j41/connect
 3. Run the command shown on the dashboard:
 
 ```bash
-j41-connect ./my-project --uid <token> --read --write --supervised
+j41-jailbox ./my-project --uid <token> --read --write --supervised
 ```
 
 ## Flags

@@ -1,5 +1,5 @@
 /**
- * Shared types and constants for j41-connect
+ * Shared types and constants for j41-jailbox
  */
 
 import type { SovGuardConfig } from './sovguard.js';

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'url';
 import { Writable, Readable, PassThrough } from 'stream';
 import chalk from 'chalk';
 
-const CONTAINER_NAME_PREFIX = 'j41-connect-';
+const CONTAINER_NAME_PREFIX = 'j41-jailbox-';
 const MCP_IMAGE = 'node:18-alpine';
 // Pinned digest — update periodically with: docker pull node:18-alpine && docker inspect --format='{{index .RepoDigests 0}}' node:18-alpine
 const MCP_IMAGE_DIGEST = 'node@sha256:8d6421d663b4c28fd3ebc498332f249011d118945588d0a35cb9bc4b8ca09d9e';

@@ -1,12 +1,12 @@
 {
-  "name": "@j41/connect",
+  "name": "@j41/jailbox",
   "version": "0.1.0",
-  "description": "Connect hired AI agents to your local project through Junction41",
+  "description": "Sandbox hired AI agents in a jailbox connected to your local project through Junction41",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "j41-connect": "dist/index.js"
+    "j41-jailbox": "dist/index.js"
   },
   "scripts": {
     "build": "tsc && tsc -p tsconfig.mcp.json && chmod +x dist/index.js",
