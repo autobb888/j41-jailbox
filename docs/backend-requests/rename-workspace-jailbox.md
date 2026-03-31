@@ -48,3 +48,18 @@ The relay **must** update to match the new names before j41-jailbox clients on t
 **Suggested rollout:** Support both `/workspace` and `/jailbox` namespaces on the relay during transition, then deprecate `/workspace` once all SDK clients have updated.
 
 **Priority:** High — current j41-jailbox builds will fail to connect until the relay supports `/jailbox`.
+
+---
+
+## 4. Action Required: SDK/Dispatcher (j41-sovagent-sdk)
+
+The following changes are needed in the agent-side SDK:
+
+| File | Change |
+|------|--------|
+| `src/workspace/client.ts:134` | `/v1/workspace/:jobId/connect-token` → `/v1/jailbox/:jobId/connect-token` |
+| `src/client/index.ts:1226` | `/v1/workspace/:jobId` → `/v1/jailbox/:jobId` |
+| Socket.IO connection | Namespace `/workspace` → `/jailbox` |
+| All event listeners | `workspace:*` → `jailbox:*` |
+
+Same pattern as the buyer-side rename — find-and-replace `workspace` → `jailbox` in namespace, event names, and API paths. Internal types (e.g. `WorkspaceClient`) can be renamed at the SDK team's discretion.
