@@ -42,6 +42,7 @@ export interface WorkspaceConfig {
 export interface ExclusionEntry {
   path: string;
   reason: string;
+  matches?: { line: number; text: string; flag: string }[];
 }
 
 export interface OperationMetadata {

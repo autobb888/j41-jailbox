@@ -13,6 +13,12 @@ export interface SovGuardConfig {
   encryptionKey?: string; // base64-encoded 256-bit AES key
 }
 
+export interface SovGuardScanMatch {
+  line: number;
+  text: string;
+  flag: string;
+}
+
 export interface SovGuardScanResult {
   safe: boolean;
   score: number;
@@ -20,6 +26,7 @@ export interface SovGuardScanResult {
   category?: string;
   classification?: string;
   flags?: string[];
+  matches?: SovGuardScanMatch[];
 }
 
 export interface SovGuardReport {

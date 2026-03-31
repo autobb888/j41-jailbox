@@ -9,7 +9,6 @@
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { join, relative, extname } from 'path';
 import { createHash } from 'crypto';
-import { createInterface } from 'readline';
 import chalk from 'chalk';
 import { AUTO_EXCLUDE_PATTERNS } from './types.js';
 import type { ExclusionEntry } from './types.js';
@@ -70,7 +69,7 @@ export async function preScan(projectDir: string, sovguard?: SovGuardConfig): Pr
 
         if (result && !result.safe) {
           const reason = result.reason || result.category || `SovGuard flagged as unsafe (score: ${result.score.toFixed(2)})`;
-          exclusions.push({ path: relPath, reason });
+          exclusions.push({ path: relPath, reason, matches: result.matches });
         }
       } catch (err) {
         if (err instanceof SovGuardAuthError) {
@@ -100,7 +99,7 @@ export async function preScan(projectDir: string, sovguard?: SovGuardConfig): Pr
   if (exclusions.length > 0) {
     console.log(chalk.yellow(`Excluded (${exclusions.length} items):`));
     for (const ex of exclusions) {
-      console.log(`  ${ex.path.padEnd(40)} — ${chalk.gray(ex.reason)}`);
+      console.log(`  ${clipPath(ex.path, 40).padEnd(40)} — ${chalk.gray(ex.reason)}`);
     }
   } else {
     console.log(chalk.green('No files excluded.'));
@@ -173,6 +172,11 @@ function shouldExclude(relPath: string, isDir: boolean): boolean {
   return false;
 }
 
+function clipPath(p: string, max: number): string {
+  if (p.length <= max) return p;
+  return '…' + p.slice(p.length - max + 1);
+}
+
 function getExcludeReason(relPath: string, isDir: boolean): string {
   const name = relPath.split('/').pop() || '';
   if (name.startsWith('.env')) return 'environment variables';
@@ -185,55 +189,94 @@ function getExcludeReason(relPath: string, isDir: boolean): string {
   return 'auto-excluded';
 }
 
-async function promptConfirm(message: string): Promise<boolean> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+async function promptRawKey(message: string): Promise<string> {
+  process.stdout.write(`${message} `);
   return new Promise((resolve) => {
-    rl.question(`${message} `, (answer) => {
-      rl.close();
-      const a = answer.trim().toLowerCase();
-      resolve(a === 'y' || a === 'yes' || a === '');
-    });
+    const stdin = process.stdin;
+    const wasRaw = stdin.isRaw;
+    if (stdin.isTTY) stdin.setRawMode(true);
+    stdin.resume();
+
+    function onData(key: Buffer) {
+      const s = key.toString();
+      stdin.removeListener('data', onData);
+      if (stdin.isTTY && wasRaw !== undefined) stdin.setRawMode(wasRaw);
+      stdin.pause();
+
+      if (s === '\x03') { process.stdout.write('\n'); process.exit(0); }
+
+      const ch = s.trim().toLowerCase();
+      process.stdout.write(ch + '\n');
+      resolve(ch);
+    }
+
+    stdin.on('data', onData);
   });
 }
 
+async function promptConfirm(message: string): Promise<boolean> {
+  const ch = await promptRawKey(message);
+  return ch === 'y' || ch === '';
+}
+
 async function promptChoice(message: string): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
-    rl.question(`${message} `, (answer) => {
-      rl.close();
-      const a = answer.trim().toLowerCase();
-      if (a === 'a' || a === 'abort') resolve('a');
-      else if (a === 'e' || a === 'edit') resolve('e');
-      else resolve('y');
-    });
-  });
+  const ch = await promptRawKey(message);
+  if (ch === 'a') return 'a';
+  if (ch === 'e') return 'e';
+  return 'y';
 }
 
 async function interactiveExclusions(exclusions: ExclusionEntry[]): Promise<ExclusionEntry[]> {
   const selected = new Array(exclusions.length).fill(true); // all excluded by default
+  const expanded = new Array(exclusions.length).fill(false);
   let cursor = 0;
+  let prevRenderLines = 0;
 
   return new Promise((resolve) => {
     const stdin = process.stdin;
     const wasRaw = stdin.isRaw;
 
+    function countRenderLines(): number {
+      let lines = 2; // header + blank line
+      for (let i = 0; i < exclusions.length; i++) {
+        lines++; // the item line
+        if (expanded[i] && exclusions[i].matches?.length) {
+          lines += exclusions[i].matches!.length;
+        }
+      }
+      return lines;
+    }
+
     function render() {
       // Move cursor up to overwrite previous render
-      if (cursor >= 0) {
-        process.stdout.write(`\x1b[${exclusions.length + 2}A\x1b[J`);
+      if (prevRenderLines > 0) {
+        process.stdout.write(`\x1b[${prevRenderLines}A\x1b[J`);
       }
-      console.log(chalk.cyan('  Edit exclusions — SPACE toggle, ENTER confirm, ESC cancel\n'));
+      console.log(chalk.cyan('  Edit exclusions — SPACE toggle, ◀/▶ expand/collapse, ENTER confirm, ESC cancel\n'));
       for (let i = 0; i < exclusions.length; i++) {
         const marker = selected[i] ? chalk.red('[x]') : chalk.green('[ ]');
         const arrow = i === cursor ? chalk.white('> ') : '  ';
-        const name = selected[i] ? chalk.gray(exclusions[i].path) : chalk.white(exclusions[i].path);
+        const clipped = clipPath(exclusions[i].path, 38);
+        const name = selected[i] ? chalk.gray(clipped) : chalk.white(clipped);
         const reason = chalk.gray(`— ${exclusions[i].reason}`);
-        console.log(`${arrow}${marker} ${name.padEnd(45)} ${reason}`);
+        const hasMatches = exclusions[i].matches && exclusions[i].matches!.length > 0;
+        const expandIcon = hasMatches ? (expanded[i] ? chalk.gray(' ▼') : chalk.gray(' ▶')) : '';
+        console.log(`${arrow}${marker} ${name.padEnd(38)} ${reason}${expandIcon}`);
+        if (expanded[i] && exclusions[i].matches?.length) {
+          for (const m of exclusions[i].matches!) {
+            const lineNum = chalk.yellow(`L${m.line}`);
+            const text = chalk.gray(m.text.length > 60 ? m.text.slice(0, 57) + '...' : m.text);
+            const flag = chalk.red(`[${m.flag}]`);
+            console.log(`       ${lineNum}: ${text}  ${flag}`);
+          }
+        }
       }
+      prevRenderLines = countRenderLines();
     }
 
     // Initial render (print blank lines first so the up-cursor works)
-    for (let i = 0; i < exclusions.length + 2; i++) console.log('');
+    prevRenderLines = countRenderLines();
+    for (let i = 0; i < prevRenderLines; i++) console.log('');
     render();
 
     if (stdin.isTTY) stdin.setRawMode(true);
@@ -271,6 +314,16 @@ async function interactiveExclusions(exclusions: ExclusionEntry[]): Promise<Excl
       } else if (s === '\x1b[B' || s === 'j') {
         // DOWN
         cursor = Math.min(exclusions.length - 1, cursor + 1);
+        render();
+      } else if (s === '\x1b[C' || s === 'l') {
+        // RIGHT — expand
+        if (exclusions[cursor].matches?.length) {
+          expanded[cursor] = true;
+          render();
+        }
+      } else if (s === '\x1b[D' || s === 'h') {
+        // LEFT — collapse
+        expanded[cursor] = false;
         render();
       }
     }
