@@ -8,7 +8,7 @@
 
 ## 1. "Pre-scan already completed" Error on Reconnect / Reuse
 
-**Bug:** When a buyer runs `j41-jailbox` with a UID that was previously used (even if the prior session errored out or was aborted), the relay rejects the `workspace:pre_scan_done` event with:
+**Bug:** When a buyer runs `j41-jailbox` with a UID that was previously used (even if the prior session errored out or was aborted), the relay rejects the `jailbox:pre_scan_done` event with:
 
 ```
 Relay error: Pre-scan already completed
@@ -17,12 +17,12 @@ Relay error: Pre-scan already completed
 The session immediately terminates — Docker container exits (code 137), no agent connects.
 
 **What j41-jailbox does today:**
-- After the buyer confirms exclusions, emits `workspace:pre_scan_done` with `{ directoryHash, excludedFiles, exclusionOverrides }` (line 366 in `cli.ts`)
+- After the buyer confirms exclusions, emits `jailbox:pre_scan_done` with `{ directoryHash, excludedFiles, exclusionOverrides }` (line 366 in `cli.ts`)
 - This is a one-shot emit with no retry or state check
 
 **What we need from the relay:**
-- **Option A (preferred):** Make `workspace:pre_scan_done` idempotent — if the relay already has pre-scan data for this UID, accept the new payload and overwrite it. The buyer may have changed exclusions between runs.
-- **Option B:** Provide a `workspace:reset` event that j41-jailbox can emit before sending pre-scan data, to clear stale session state for the UID.
+- **Option A (preferred):** Make `jailbox:pre_scan_done` idempotent — if the relay already has pre-scan data for this UID, accept the new payload and overwrite it. The buyer may have changed exclusions between runs.
+- **Option B:** Provide a `jailbox:reset` event that j41-jailbox can emit before sending pre-scan data, to clear stale session state for the UID.
 - **Option C:** Return a specific error code (e.g., `PRE_SCAN_EXISTS`) so j41-jailbox can detect this and skip re-sending. But this means exclusion changes won't take effect on retry — worst option.
 
 **Reproduction:**

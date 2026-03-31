@@ -5,7 +5,7 @@
  * Exposes 3 tools: list_directory, read_file, write_file.
  * Zero npm dependencies — only Node.js built-ins.
  *
- * The /workspace directory is the mounted project directory.
+ * The /jailbox directory is the mounted project directory.
  */
 
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync } from 'fs';
@@ -13,7 +13,7 @@ import { join, resolve, relative, dirname } from 'path';
 import { createHash } from 'crypto';
 import { createInterface } from 'readline';
 
-const WORKSPACE_ROOT = '/workspace';
+const JAILBOX_ROOT = '/jailbox';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_DIR_ENTRIES = 10_000;
 
@@ -222,9 +222,9 @@ function resolveSafe(relPath: string): string | null {
   // Reject paths with .. before resolution
   if (relPath.includes('..')) return null;
 
-  const absPath = resolve(WORKSPACE_ROOT, relPath);
-  // Must be within workspace root
-  if (!absPath.startsWith(WORKSPACE_ROOT + '/') && absPath !== WORKSPACE_ROOT) {
+  const absPath = resolve(JAILBOX_ROOT, relPath);
+  // Must be within jailbox root
+  if (!absPath.startsWith(JAILBOX_ROOT + '/') && absPath !== JAILBOX_ROOT) {
     return null;
   }
   return absPath;
@@ -240,4 +240,4 @@ function isBinary(buffer: Buffer): boolean {
 }
 
 // Exports for testing (not used at runtime)
-export { resolveSafe, listDirectory, readFile, writeFile, isBinary, WORKSPACE_ROOT, MAX_FILE_SIZE, MAX_DIR_ENTRIES };
+export { resolveSafe, listDirectory, readFile, writeFile, isBinary, JAILBOX_ROOT, MAX_FILE_SIZE, MAX_DIR_ENTRIES };

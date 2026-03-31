@@ -15,7 +15,7 @@ const CONTAINER_NAME_PREFIX = 'j41-jailbox-';
 const MCP_IMAGE = 'node:18-alpine';
 // Pinned digest — update periodically with: docker pull node:18-alpine && docker inspect --format='{{index .RepoDigests 0}}' node:18-alpine
 const MCP_IMAGE_DIGEST = 'node@sha256:8d6421d663b4c28fd3ebc498332f249011d118945588d0a35cb9bc4b8ca09d9e';
-const WORKSPACE_MOUNT = '/workspace';
+const JAILBOX_MOUNT = '/jailbox';
 
 export class DockerManager {
   private docker: Docker;
@@ -80,7 +80,7 @@ export class DockerManager {
       Image: useImage,
       name: containerName,
       Cmd: ['node', '/app/mcp-server.js'],
-      WorkingDir: WORKSPACE_MOUNT,
+      WorkingDir: JAILBOX_MOUNT,
       OpenStdin: true,
       StdinOnce: false,
       AttachStdin: true,
@@ -89,7 +89,7 @@ export class DockerManager {
       Tty: false,
       HostConfig: {
         Binds: [
-          `${projectDir}:${WORKSPACE_MOUNT}:rw`,
+          `${projectDir}:${JAILBOX_MOUNT}:rw`,
           `${mcpServerPath}:/app/mcp-server.js:ro`,
         ],
         NetworkMode: 'none', // No network access

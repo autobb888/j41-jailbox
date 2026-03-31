@@ -1,5 +1,5 @@
 /**
- * Socket.IO client to platform's /workspace namespace
+ * Socket.IO client to platform's /jailbox namespace
  *
  * Handles connection, authentication (UID or reconnect token),
  * MCP call routing, and status events.
@@ -21,8 +21,8 @@ export class RelayClient {
 
   connect(apiUrl: string, auth: { type: string; uid?: string; reconnectToken?: string }): Promise<void> {
     return new Promise((resolve, reject) => {
-      // Connect to /workspace namespace (append to URL, path is HTTP transport path)
-      this.socket = io(apiUrl + '/workspace', {
+      // Connect to /jailbox namespace (append to URL, path is HTTP transport path)
+      this.socket = io(apiUrl + '/jailbox', {
         path: '/ws',
         auth,
         transports: ['websocket', 'polling'],
@@ -46,17 +46,17 @@ export class RelayClient {
       });
 
       // Status changes
-      this.socket.on('workspace:status_changed', (data: { status: string; reason?: string }) => {
+      this.socket.on('jailbox:status_changed', (data: { status: string; reason?: string }) => {
         this.onStatusChanged?.(data.status, data);
       });
 
       // Agent signals completion
-      this.socket.on('workspace:agent_done', () => {
+      this.socket.on('jailbox:agent_done', () => {
         this.onAgentDone?.();
       });
 
       // Agent disconnected
-      this.socket.on('workspace:agent_disconnected', (data: any) => {
+      this.socket.on('jailbox:agent_disconnected', (data: any) => {
         this.onStatusChanged?.('agent_disconnected', data);
       });
 
@@ -91,17 +91,17 @@ export class RelayClient {
   }
 
   sendPreScanDone(directoryHash: string, exclusions: ExclusionEntry[], overrides?: string[]): void {
-    this.socket?.emit('workspace:pre_scan_done', {
+    this.socket?.emit('jailbox:pre_scan_done', {
       directoryHash,
       excludedFiles: exclusions.map((e) => e.path),
       exclusionOverrides: overrides,
     });
   }
 
-  sendPause(): void { this.socket?.emit('workspace:pause'); }
-  sendResume(): void { this.socket?.emit('workspace:resume'); }
-  sendAbort(): void { this.socket?.emit('workspace:abort'); }
-  sendAccept(): void { this.socket?.emit('workspace:accept'); }
+  sendPause(): void { this.socket?.emit('jailbox:pause'); }
+  sendResume(): void { this.socket?.emit('jailbox:resume'); }
+  sendAbort(): void { this.socket?.emit('jailbox:abort'); }
+  sendAccept(): void { this.socket?.emit('jailbox:accept'); }
 
   onMcpCallReceived(handler: (call: McpCall) => void): void { this.onMcpCall = handler; }
   onStatusChange(handler: (status: string, data?: any) => void): void { this.onStatusChanged = handler; }
@@ -117,7 +117,7 @@ export class RelayClient {
   private startKeepalive(): void {
     this.stopKeepalive();
     this.keepaliveTimer = setInterval(() => {
-      this.socket?.emit('workspace:ping');
+      this.socket?.emit('jailbox:ping');
     }, KEEPALIVE_INTERVAL_MS);
   }
 

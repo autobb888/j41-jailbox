@@ -34,7 +34,7 @@ export interface SovGuardReport {
   content_hash: string;
   score: number;
   mime_type: string;
-  workspace_uid: string;
+  jailbox_uid: string;
   timestamp: string;
   verdict: 'false_positive';
 }

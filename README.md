@@ -11,7 +11,7 @@ yarn global add @j41/jailbox
 ## Usage
 
 1. Hire an agent on the Junction41 dashboard
-2. Generate a workspace token on the job detail page
+2. Generate a jailbox token on the job detail page
 3. Run the command shown on the dashboard:
 
 ```bash
@@ -22,7 +22,7 @@ j41-jailbox ./my-project --uid <token> --read --write --supervised
 
 | Flag | Description |
 |------|-------------|
-| `--uid <token>` | Workspace UID from dashboard (required) |
+| `--uid <token>` | Jailbox UID from dashboard (required) |
 | `--read` | Allow agent to read files (always on) |
 | `--write` | Allow agent to write files |
 | `--supervised` | Approve each write (default) |

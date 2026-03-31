@@ -3,8 +3,8 @@ import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-// We need to test with a custom workspace root
-// Since mcp-server uses a hardcoded WORKSPACE_ROOT = '/workspace',
+// We need to test with a custom jailbox root
+// Since mcp-server uses a hardcoded WORKSPACE_ROOT = '/jailbox',
 // we'll test resolveSafe logic directly and file ops via the exported functions
 
 describe('mcp-server', () => {
@@ -26,21 +26,21 @@ describe('mcp-server', () => {
       expect(resolveSafe('foo/../../etc/passwd')).toBeNull();
     });
 
-    it('resolves valid relative paths under /workspace', () => {
+    it('resolves valid relative paths under /jailbox', () => {
       const result = resolveSafe('src/main.rs');
-      expect(result).toBe('/workspace/src/main.rs');
+      expect(result).toBe('/jailbox/src/main.rs');
     });
 
     it('resolves root path .', () => {
       const result = resolveSafe('.');
-      expect(result).toBe('/workspace');
+      expect(result).toBe('/jailbox');
     });
 
-    it('rejects absolute paths outside workspace', () => {
-      // Absolute paths get resolved relative to workspace, so /etc becomes /workspace/etc
+    it('rejects absolute paths outside jailbox', () => {
+      // Absolute paths get resolved relative to jailbox, so /etc becomes /jailbox/etc
       // This is actually safe — resolveSafe uses resolve() which joins them
       const result = resolveSafe('/etc/passwd');
-      // path.resolve('/workspace', '/etc/passwd') = '/etc/passwd' which is outside /workspace
+      // path.resolve('/jailbox', '/etc/passwd') = '/etc/passwd' which is outside /jailbox
       expect(result).toBeNull();
     });
   });
@@ -80,13 +80,13 @@ describe('mcp-server', () => {
     let tempDir: string;
 
     beforeEach(async () => {
-      // Create temp workspace
+      // Create temp jailbox
       tempDir = join(tmpdir(), `j41-test-${Date.now()}`);
       mkdirSync(join(tempDir, 'subdir'), { recursive: true });
       writeFileSync(join(tempDir, 'file.txt'), 'hello');
       writeFileSync(join(tempDir, 'subdir', 'nested.txt'), 'nested');
 
-      // Note: listDirectory uses the hardcoded WORKSPACE_ROOT = '/workspace'
+      // Note: listDirectory uses the hardcoded WORKSPACE_ROOT = '/jailbox'
       // We can't easily override it, so we test return shape and error handling
       const mod = await import('../src/mcp-server.js');
       listDirectory = mod.listDirectory;

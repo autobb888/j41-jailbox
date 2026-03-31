@@ -7,7 +7,7 @@ import { existsSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { execSync } from 'child_process';
 import chalk from 'chalk';
-import type { WorkspaceConfig, McpCall, McpResult, ExclusionEntry, OperationMetadata } from './types.js';
+import type { JailboxConfig, McpCall, McpResult, ExclusionEntry, OperationMetadata } from './types.js';
 import { MAX_SESSION_TRANSFER } from './types.js';
 import { preScan, isExcluded } from './pre-scan.js';
 import { DockerManager, getMcpServerPath } from './docker.js';
@@ -22,7 +22,7 @@ import { createInterface } from 'readline';
 
 const J41_API_URL = process.env.J41_API_URL || 'https://api.junction41.io';
 
-export function parseArgs(argv: string[]): WorkspaceConfig {
+export function parseArgs(argv: string[]): JailboxConfig {
   const program = new Command();
 
   program
@@ -30,7 +30,7 @@ export function parseArgs(argv: string[]): WorkspaceConfig {
     .description('Connect hired AI agents to your local project through Junction41')
     .version('0.1.0')
     .argument('<directory>', 'Project directory to share with the agent')
-    .option('--uid <token>', 'Workspace UID from dashboard')
+    .option('--uid <token>', 'Jailbox UID from dashboard')
     .option('--resume <token>', 'Reconnect with fresh reconnect token')
     .option('--read', 'Allow agent to read files (always on)', true)
     .option('--write', 'Allow agent to write files')
@@ -60,7 +60,7 @@ export function parseArgs(argv: string[]): WorkspaceConfig {
   // Require either --uid or --resume
   if (!opts.uid && !opts.resume) {
     console.error(chalk.red('Error: --uid <token> or --resume <token> is required'));
-    console.error('Generate a workspace token on the Junction41 dashboard.');
+    console.error('Generate a jailbox token on the Junction41 dashboard.');
     process.exit(1);
   }
 
@@ -159,11 +159,11 @@ export function checkGitStatus(projectDir: string): void {
     }
   } catch {
     console.warn(chalk.yellow('Warning: Not a git repo. Changes made by the agent cannot be easily reverted.'));
-    console.warn(chalk.yellow('Consider: git init && git add -A && git commit -m "pre-workspace snapshot"'));
+    console.warn(chalk.yellow('Consider: git init && git add -A && git commit -m "pre-jailbox snapshot"'));
   }
 }
 
-export async function run(config: WorkspaceConfig): Promise<void> {
+export async function run(config: JailboxConfig): Promise<void> {
   const feed = new Feed(config.verbose);
   const docker = new DockerManager();
   const relay = new RelayClient();
@@ -187,7 +187,7 @@ export async function run(config: WorkspaceConfig): Promise<void> {
         content_hash: lastFlaggedWrite.contentHash,
         score: lastFlaggedWrite.score,
         mime_type: lastFlaggedWrite.mimeType,
-        workspace_uid: config.uid,
+        jailbox_uid: config.uid,
         timestamp: new Date().toISOString(),
         verdict: 'false_positive',
       });
@@ -375,10 +375,10 @@ export async function run(config: WorkspaceConfig): Promise<void> {
     relay.onStatusChange((status, data) => {
       switch (status) {
         case 'active':
-          feed.logStatus('Workspace active');
+          feed.logStatus('Jailbox active');
           break;
         case 'paused':
-          feed.logStatus('Workspace paused');
+          feed.logStatus('Jailbox paused');
           break;
         case 'aborted':
           feed.logStatus('Session aborted');
@@ -389,7 +389,7 @@ export async function run(config: WorkspaceConfig): Promise<void> {
           cleanup().then(() => process.exit(0));
           break;
         case 'agent_disconnected':
-          feed.logStatus('Agent disconnected. Workspace remains open.');
+          feed.logStatus('Agent disconnected. Jailbox remains open.');
           break;
         case 'disconnected':
           if (data?.reconnecting) {
@@ -453,7 +453,7 @@ export async function run(config: WorkspaceConfig): Promise<void> {
         relay.sendResult({
           id: call.id,
           success: false,
-          error: 'File is excluded from workspace',
+          error: 'File is excluded from jailbox',
           metadata: meta,
         });
         return;
@@ -614,7 +614,7 @@ export async function run(config: WorkspaceConfig): Promise<void> {
                 content_hash: sovguardClient.contentHash(writeContent),
                 score: scanResult.score,
                 mime_type: mimeType,
-                workspace_uid: config.uid,
+                jailbox_uid: config.uid,
                 timestamp: new Date().toISOString(),
                 verdict: 'false_positive',
               });

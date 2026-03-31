@@ -24,14 +24,14 @@ export const AUTO_EXCLUDE_PATTERNS = [
 
 // ── Types ───────────────────────────────────────────────────────
 
-export type WorkspaceMode = 'supervised' | 'standard';
+export type JailboxMode = 'supervised' | 'standard';
 
-export interface WorkspaceConfig {
+export interface JailboxConfig {
   projectDir: string;
   uid: string;
   resumeToken?: string;
   permissions: { read: boolean; write: boolean };
-  mode: WorkspaceMode;
+  mode: JailboxMode;
   verbose: boolean;
   apiUrl: string;
   sovguard?: SovGuardConfig;
