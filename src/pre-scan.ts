@@ -248,26 +248,34 @@ async function interactiveExclusions(exclusions: ExclusionEntry[]): Promise<Excl
     }
 
     function render() {
+      const cols = process.stdout.columns || 80;
       // Move cursor up to overwrite previous render
       if (prevRenderLines > 0) {
         process.stdout.write(`\x1b[${prevRenderLines}A\x1b[J`);
       }
-      console.log(chalk.cyan('  Edit exclusions — SPACE toggle, ◀/▶ expand/collapse, ENTER confirm, ESC cancel\n'));
+      console.log(chalk.cyan('  SPACE toggle | ←→ details | ENTER confirm | ESC cancel\n'));
+      // Dynamic column widths based on terminal size
+      const pathMax = Math.max(20, Math.min(40, Math.floor(cols * 0.35)));
+      const reasonMax = Math.max(15, Math.min(35, Math.floor(cols * 0.3)));
       for (let i = 0; i < exclusions.length; i++) {
         const marker = selected[i] ? chalk.red('[x]') : chalk.green('[ ]');
         const arrow = i === cursor ? chalk.white('> ') : '  ';
-        const clipped = clipPath(exclusions[i].path, 38);
+        const clipped = clipPath(exclusions[i].path, pathMax);
         const name = selected[i] ? chalk.gray(clipped) : chalk.white(clipped);
-        const reason = chalk.gray(`— ${exclusions[i].reason}`);
+        const reasonText = exclusions[i].reason.length > reasonMax
+          ? exclusions[i].reason.slice(0, reasonMax - 1) + '…' : exclusions[i].reason;
+        const reason = chalk.gray(`— ${reasonText}`);
         const hasMatches = exclusions[i].matches && exclusions[i].matches!.length > 0;
         const expandIcon = hasMatches ? (expanded[i] ? chalk.gray(' ▼') : chalk.gray(' ▶')) : '';
-        console.log(`${arrow}${marker} ${name.padEnd(38)} ${reason}${expandIcon}`);
+        console.log(`${arrow}${marker} ${clipped.padEnd(pathMax)} ${reason}${expandIcon}`);
         if (expanded[i] && exclusions[i].matches?.length) {
+          const matchTextMax = Math.max(20, cols - 25); // 7 indent + L##: + flag
           for (const m of exclusions[i].matches!) {
             const lineNum = chalk.yellow(`L${m.line}`);
-            const text = chalk.gray(m.text.length > 60 ? m.text.slice(0, 57) + '...' : m.text);
+            const mText = m.text.length > matchTextMax
+              ? m.text.slice(0, matchTextMax - 3) + '...' : m.text;
             const flag = chalk.red(`[${m.flag}]`);
-            console.log(`       ${lineNum}: ${text}  ${flag}`);
+            console.log(`       ${lineNum}: ${chalk.white(mText)}  ${flag}`);
           }
         }
       }
