@@ -6,9 +6,12 @@
  */
 
 import Docker from 'dockerode';
-import { resolve, dirname } from 'path';
+import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { Writable, Readable, PassThrough } from 'stream';
+import { existsSync, readFileSync } from 'fs';
+import { homedir } from 'os';
+import { execSync } from 'child_process';
 import chalk from 'chalk';
 
 const CONTAINER_NAME_PREFIX = 'j41-jailbox-';
@@ -16,6 +19,74 @@ const MCP_IMAGE = 'node:18-alpine';
 // Pinned digest — update periodically with: docker pull node:18-alpine && docker inspect --format='{{index .RepoDigests 0}}' node:18-alpine
 const MCP_IMAGE_DIGEST = 'node@sha256:8d6421d663b4c28fd3ebc498332f249011d118945588d0a35cb9bc4b8ca09d9e';
 const JAILBOX_MOUNT = '/jailbox';
+
+// --- Jailbox container security helpers (Plan B) ---
+
+function buildJailboxSecurityOpt(): string[] {
+  const opts = ['no-new-privileges:true'];
+
+  // Seccomp profile — deployed by @j41/secure-setup
+  const seccompPath = process.platform === 'linux'
+    ? '/etc/j41/seccomp-jailbox.json'
+    : join(homedir(), '.j41', 'seccomp-jailbox.json');
+
+  if (existsSync(seccompPath)) {
+    opts.push(`seccomp=${seccompPath}`);
+  }
+
+  // AppArmor — Linux only
+  if (process.platform === 'linux') {
+    try {
+      const profiles = readFileSync('/sys/kernel/security/apparmor/profiles', 'utf8');
+      if (profiles.includes('j41-jailbox-profile')) {
+        opts.push('apparmor=j41-jailbox-profile');
+      }
+    } catch {
+      // AppArmor not available
+    }
+  }
+
+  return opts;
+}
+
+function detectGvisorRuntime(): string | undefined {
+  try {
+    const rt = execSync('docker info --format "{{.DefaultRuntime}}"', {
+      encoding: 'utf8', timeout: 5000,
+    }).trim();
+    return rt === 'runsc' ? 'runsc' : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function getJailboxBwrapOverrides(): Partial<Record<string, any>> {
+  // Only use bwrap if gVisor is NOT the runtime
+  if (detectGvisorRuntime()) return {};
+
+  try {
+    execSync('which bwrap', { stdio: 'ignore', timeout: 3000 });
+  } catch {
+    return {}; // bwrap not installed
+  }
+
+  // Find the entrypoint script from @j41/secure-setup
+  let entrypointPath: string | undefined;
+  try {
+    const setupPkg = require.resolve('@j41/secure-setup');
+    entrypointPath = join(dirname(setupPkg), '..', 'scripts', 'entrypoint-jailbox.sh');
+    if (!existsSync(entrypointPath)) entrypointPath = undefined;
+  } catch {
+    // @j41/secure-setup not installed
+  }
+
+  if (!entrypointPath) return {};
+
+  return {
+    CapDrop: [],
+    CapAdd: ['SYS_ADMIN'],
+  };
+}
 
 export class DockerManager {
   private docker: Docker;
@@ -26,7 +97,10 @@ export class DockerManager {
     this.docker = new Docker();
   }
 
-  async start(projectDir: string, mcpServerPath: string): Promise<{
+  async start(projectDir: string, mcpServerPath: string, options?: {
+    writable?: boolean;
+    scope?: string[];
+  }): Promise<{
     stdin: Writable;
     stdout: Readable;
   }> {
@@ -89,18 +163,37 @@ export class DockerManager {
       Tty: false,
       HostConfig: {
         Binds: [
-          `${projectDir}:${JAILBOX_MOUNT}:rw`,
+          // Scoped mounts: mount only specified subdirectories
+          ...(options?.scope && options.scope.length > 0
+            ? options.scope.map(dir => {
+                const hostPath = resolve(projectDir, dir);
+                const containerPath = `${JAILBOX_MOUNT}/${dir}`;
+                return `${hostPath}:${containerPath}:${options?.writable ? 'rw' : 'ro'}`;
+              })
+            : [`${projectDir}:${JAILBOX_MOUNT}:${options?.writable ? 'rw' : 'ro'}`]
+          ),
           `${mcpServerPath}:/app/mcp-server.js:ro`,
         ],
-        NetworkMode: 'none', // No network access
+        NetworkMode: 'none',
         Memory: 512 * 1024 * 1024, // 512MB
         MemorySwap: 512 * 1024 * 1024,
         CpuPeriod: 100000,
         CpuQuota: 100000, // 1 CPU core
         PidsLimit: 64,
-        ReadonlyRootfs: false, // Need writable for /tmp
-        SecurityOpt: ['no-new-privileges'],
+        ReadonlyRootfs: true,
+        Tmpfs: { '/tmp': 'rw,noexec,nosuid,size=32m' },
+        SecurityOpt: buildJailboxSecurityOpt(),
+        StorageOpt: { size: '512m' },
+        OomScoreAdj: 1000,
+        CapDrop: ['ALL'],
+        // gVisor runtime (if configured as Docker default)
+        ...(detectGvisorRuntime() ? { Runtime: 'runsc' } : {}),
+        // bwrap overrides (degraded mode — only if gVisor unavailable)
+        ...getJailboxBwrapOverrides(),
       },
+      Env: [
+        `JAILBOX_WRITABLE=${options?.writable ? 'true' : 'false'}`,
+      ],
     });
 
     // Attach to container stdio

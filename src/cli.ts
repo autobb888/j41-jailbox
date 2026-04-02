@@ -7,7 +7,7 @@ import { existsSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { execSync } from 'child_process';
 import chalk from 'chalk';
-import type { JailboxConfig, McpCall, McpResult, ExclusionEntry, OperationMetadata } from './types.js';
+import type { JailboxConfig, JailboxMode, McpCall, McpResult, ExclusionEntry, OperationMetadata } from './types.js';
 import { MAX_SESSION_TRANSFER } from './types.js';
 import { preScan, isExcluded } from './pre-scan.js';
 import { DockerManager, getMcpServerPath } from './docker.js';
@@ -36,6 +36,8 @@ export function parseArgs(argv: string[]): JailboxConfig {
     .option('--write', 'Allow agent to write files')
     .option('--supervised', 'Approve each write action (default)')
     .option('--standard', 'Agent works freely, buyer watches feed')
+    .option('--readonly', 'No writes at all, even with --write')
+    .option('--scope <dirs>', 'Restrict agent to specific subdirectories (comma-separated)', (val: string) => val.split(',').map(s => s.trim()))
     .option('--verbose', 'Show file sizes and details in feed')
     .option('--sovguard-key <key>', 'SovGuard API key for file scanning')
     .option('--sovguard-url <url>', 'SovGuard API URL')
@@ -76,17 +78,21 @@ export function parseArgs(argv: string[]): JailboxConfig {
   }
 
   // Determine mode
-  const mode = opts.standard ? 'standard' : 'supervised';
+  const mode: JailboxMode = opts.readonly ? 'readonly' : opts.standard ? 'standard' : 'supervised';
+
+  // Readonly mode overrides --write
+  const permissions = { read: true, write: opts.readonly ? false : !!opts.write };
 
   return {
     projectDir,
     uid: opts.uid || '',
     resumeToken: opts.resume,
-    permissions: { read: true, write: !!opts.write },
+    permissions,
     mode,
     verbose: !!opts.verbose,
     apiUrl: J41_API_URL,
     sovguard: undefined, // resolved in run() via resolveCredentials
+    scope: opts.scope || undefined,
     _cliSovguardKey: opts.sovguardKey,
     _cliSovguardUrl: opts.sovguardUrl,
   };
@@ -297,7 +303,10 @@ export async function run(config: JailboxConfig): Promise<void> {
     // ── 3. Start Docker ────────────────────────────────────────
     feed.logStatus('Starting Docker container...');
     const mcpServerPath = getMcpServerPath();
-    const { stdin: dockerStdin, stdout: dockerStdout } = await docker.start(config.projectDir, mcpServerPath);
+    const { stdin: dockerStdin, stdout: dockerStdout } = await docker.start(config.projectDir, mcpServerPath, {
+      writable: config.permissions.write,
+      scope: config.scope,
+    });
     feed.logStatus('Docker container running');
 
     // I3 fix: monitor container health — detect crashes

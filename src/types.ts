@@ -24,7 +24,7 @@ export const AUTO_EXCLUDE_PATTERNS = [
 
 // ── Types ───────────────────────────────────────────────────────
 
-export type JailboxMode = 'supervised' | 'standard';
+export type JailboxMode = 'supervised' | 'standard' | 'readonly';
 
 export interface JailboxConfig {
   projectDir: string;
@@ -35,6 +35,7 @@ export interface JailboxConfig {
   verbose: boolean;
   apiUrl: string;
   sovguard?: SovGuardConfig;
+  scope?: string[]; // Subdirectories to mount (e.g., ['src', 'tests'])
   _cliSovguardKey?: string;
   _cliSovguardUrl?: string;
 }
