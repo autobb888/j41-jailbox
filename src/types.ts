@@ -36,6 +36,7 @@ export interface JailboxConfig {
   apiUrl: string;
   sovguard?: SovGuardConfig;
   scope?: string[]; // Subdirectories to mount (e.g., ['src', 'tests'])
+  sessionLimits?: Partial<SessionLimits>;
   _cliSovguardKey?: string;
   _cliSovguardUrl?: string;
 }
@@ -84,3 +85,17 @@ export interface SessionStats {
 
 // Stdin state machine for command/approval coexistence
 export type InputState = 'IDLE' | 'APPROVAL_PENDING' | 'SOVGUARD_PENDING';
+
+// ── Session Limits ────────────────────────────────────────────
+
+export interface SessionLimits {
+  maxDurationMs: number;    // 4 hours default
+  maxReads: number;         // 500 default
+  maxWrites: number;        // 100 default
+}
+
+export const DEFAULT_SESSION_LIMITS: SessionLimits = {
+  maxDurationMs: 4 * 60 * 60 * 1000,  // 4 hours
+  maxReads: 500,
+  maxWrites: 100,
+};

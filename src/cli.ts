@@ -17,6 +17,8 @@ import { Feed } from './feed.js';
 import { SovGuardClient, SCAN_MAX_BYTES } from './sovguard.js';
 import type { SovGuardScanResult, SovGuardReport } from './sovguard.js';
 import { resolveCredentials, writeConfig, DEFAULT_SOVGUARD_URL } from './config.js';
+import { SessionLimiter } from './session-limiter.js';
+import { AuditLog } from './audit-log.js';
 
 import { createInterface } from 'readline';
 
@@ -41,6 +43,9 @@ export function parseArgs(argv: string[]): JailboxConfig {
     .option('--verbose', 'Show file sizes and details in feed')
     .option('--sovguard-key <key>', 'SovGuard API key for file scanning')
     .option('--sovguard-url <url>', 'SovGuard API URL')
+    .option('--max-reads <n>', 'Max file reads per session', parseInt)
+    .option('--max-writes <n>', 'Max file writes per session', parseInt)
+    .option('--max-duration <hours>', 'Max session duration in hours', parseFloat)
     .parse(argv);
 
   const opts = program.opts();
@@ -93,6 +98,11 @@ export function parseArgs(argv: string[]): JailboxConfig {
     apiUrl: J41_API_URL,
     sovguard: undefined, // resolved in run() via resolveCredentials
     scope: opts.scope || undefined,
+    sessionLimits: {
+      ...(opts.maxReads ? { maxReads: opts.maxReads } : {}),
+      ...(opts.maxWrites ? { maxWrites: opts.maxWrites } : {}),
+      ...(opts.maxDuration ? { maxDurationMs: opts.maxDuration * 3600000 } : {}),
+    },
     _cliSovguardKey: opts.sovguardKey,
     _cliSovguardUrl: opts.sovguardUrl,
   };
@@ -178,6 +188,8 @@ export async function run(config: JailboxConfig): Promise<void> {
   let sessionTransferBytes = 0;
   let sovguardClient: SovGuardClient | null = null;
   let lastFlaggedWrite: { filePath: string; contentHash: string; score: number; mimeType: string } | null = null;
+  const limiter = new SessionLimiter(config.sessionLimits);
+  const auditLog = new AuditLog();
 
     function handleReportCommand() {
       if (!lastFlaggedWrite) {
@@ -207,7 +219,18 @@ export async function run(config: JailboxConfig): Promise<void> {
   async function cleanup() {
     if (cleanedUp) return;
     cleanedUp = true;
+    limiter.dispose();
     feed.printSummary();
+
+    // Export and upload audit log
+    const logExport = auditLog.exportLog();
+    if (logExport.entries.length > 0) {
+      feed.logStatus(`Session audit log: ${logExport.entries.length} entries, chain ${auditLog.verifyChain() ? 'valid' : 'BROKEN'}`);
+      if (typeof (relay as any).sendAuditLog === 'function') {
+        try { (relay as any).sendAuditLog(logExport); } catch { /* best effort */ }
+      }
+    }
+
     supervisor?.close();
     stdModeRl?.close();
     relay.disconnect();
@@ -374,6 +397,25 @@ export async function run(config: JailboxConfig): Promise<void> {
     // Send pre-scan data
     relay.sendPreScanDone(scanResult.directoryHash, exclusions);
 
+    // Register session signing key with platform (when relay supports it)
+    if (typeof (relay as any).sendSessionKey === 'function') {
+      try {
+        (relay as any).sendSessionKey(auditLog.getPublicKey());
+        feed.logStatus('Session signing key registered with platform');
+      } catch {
+        feed.logStatus('Warning: could not register session key');
+      }
+    }
+    feed.logStatus('Session signing key generated (Ed25519)');
+
+    // Auto-kill on session expiry
+    limiter.startAutoKill(async () => {
+      feed.logError('Session time limit reached — auto-terminating');
+      relay.sendAbort();
+      await cleanup();
+      process.exit(0);
+    });
+
     // ── 5. Handle relay events ─────────────────────────────────
 
     relay.onRelayError((error) => {
@@ -484,6 +526,23 @@ export async function run(config: JailboxConfig): Promise<void> {
           error: 'Session transfer limit exceeded',
           metadata: meta,
         });
+        return;
+      }
+
+      // Session operation limits
+      const isRead = toolName === 'read_file' || toolName === 'list_directory';
+      const isWrite = toolName === 'write_file';
+
+      if (isRead && !limiter.canRead()) {
+        const meta: OperationMetadata = { operation: toolName as any, path: relPath, sovguardScore: 0, blocked: true, blockReason: limiter.blockReason() };
+        feed.logOperation(meta);
+        relay.sendResult({ id: call.id, success: false, error: limiter.blockReason(), metadata: meta });
+        return;
+      }
+      if (isWrite && !limiter.canWrite()) {
+        const meta: OperationMetadata = { operation: toolName as any, path: relPath, sovguardScore: 0, blocked: true, blockReason: limiter.blockReason() };
+        feed.logOperation(meta);
+        relay.sendResult({ id: call.id, success: false, error: limiter.blockReason(), metadata: meta });
         return;
       }
 
@@ -671,6 +730,18 @@ export async function run(config: JailboxConfig): Promise<void> {
           error: result.isError ? result.content?.[0]?.text : undefined,
           metadata: meta,
         });
+
+        // Record operation in session limiter + audit log
+        if (!result.isError) {
+          if (isRead) limiter.recordRead();
+          if (isWrite) limiter.recordWrite();
+          auditLog.record(
+            toolName,
+            mcpMeta.path || relPath,
+            sizeBytes,
+            mcpMeta.contentHash || '',
+          );
+        }
 
         // Fire-and-forget SovGuard read scan
         if (toolName === 'read_file' && sovguardClient && !sovguardClient.isDisabled() && !result.isError) {

@@ -6,7 +6,7 @@
  * list to the buyer for confirmation.
  */
 
-import { readdirSync, readFileSync, statSync } from 'fs';
+import { readdirSync, readFileSync, statSync, realpathSync } from 'fs';
 import { join, relative, extname } from 'path';
 import { createHash } from 'crypto';
 import chalk from 'chalk';
@@ -139,6 +139,27 @@ function walkDir(
   for (const entry of entries) {
     const fullPath = join(currentDir, entry.name);
     const relPath = relative(rootDir, fullPath);
+
+    // Symlink traversal protection: detect symlinks pointing outside project root
+    if (entry.isSymbolicLink()) {
+      try {
+        const realTarget = realpathSync(fullPath);
+        if (!realTarget.startsWith(rootDir + '/') && realTarget !== rootDir) {
+          exclusions.push({
+            path: relPath + (entry.isDirectory() ? '/' : ''),
+            reason: `symlink points outside project root (-> ${realTarget})`,
+          });
+          continue;
+        }
+      } catch {
+        // Broken symlink — exclude
+        exclusions.push({
+          path: relPath,
+          reason: 'broken symlink (target does not exist)',
+        });
+        continue;
+      }
+    }
 
     // Check auto-exclude patterns
     if (shouldExclude(relPath, entry.isDirectory())) {

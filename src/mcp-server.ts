@@ -8,7 +8,7 @@
  * The /jailbox directory is the mounted project directory.
  */
 
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync, realpathSync, lstatSync } from 'fs';
 import { join, resolve, relative, dirname } from 'path';
 import { createHash } from 'crypto';
 import { createInterface } from 'readline';
@@ -223,10 +223,37 @@ function resolveSafe(relPath: string): string | null {
   if (relPath.includes('..')) return null;
 
   const absPath = resolve(JAILBOX_ROOT, relPath);
-  // Must be within jailbox root
+  // Must be within jailbox root (pre-resolution check)
   if (!absPath.startsWith(JAILBOX_ROOT + '/') && absPath !== JAILBOX_ROOT) {
     return null;
   }
+
+  // Symlink resolution: follow symlinks and verify the REAL path stays in /jailbox/
+  if (existsSync(absPath)) {
+    try {
+      const realPath = realpathSync(absPath);
+      if (!realPath.startsWith(JAILBOX_ROOT + '/') && realPath !== JAILBOX_ROOT) {
+        return null; // Symlink escapes jailbox
+      }
+      return realPath;
+    } catch {
+      return null; // Broken symlink or permission error
+    }
+  }
+
+  // Path doesn't exist yet (write_file creates it) — check parent
+  const parentDir = resolve(absPath, '..');
+  if (existsSync(parentDir)) {
+    try {
+      const realParent = realpathSync(parentDir);
+      if (!realParent.startsWith(JAILBOX_ROOT + '/') && realParent !== JAILBOX_ROOT) {
+        return null; // Parent symlink escapes jailbox
+      }
+    } catch {
+      return null;
+    }
+  }
+
   return absPath;
 }
 
