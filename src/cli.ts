@@ -4,7 +4,8 @@
 
 import { Command } from 'commander';
 import { existsSync, statSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, join } from 'path';
+import { homedir } from 'os';
 import { execSync } from 'child_process';
 import chalk from 'chalk';
 import type { JailboxConfig, JailboxMode, McpCall, McpResult, ExclusionEntry, OperationMetadata } from './types.js';
@@ -23,6 +24,20 @@ import { AuditLog } from './audit-log.js';
 import { createInterface } from 'readline';
 
 const J41_API_URL = process.env.J41_API_URL || 'https://api.junction41.io';
+
+async function loadSecureSetup(): Promise<any> {
+  try {
+    // @ts-ignore — not on npm yet; graceful fallback below
+    return await import('@j41/secure-setup');
+  } catch {
+    try {
+      // @ts-ignore — local dev path, no type declarations
+      return await import('../../j41-secure-setup/lib/index.js');
+    } catch {
+      return null;
+    }
+  }
+}
 
 export function parseArgs(argv: string[]): JailboxConfig {
   const program = new Command();
@@ -261,6 +276,49 @@ export async function run(config: JailboxConfig): Promise<void> {
   });
 
   try {
+    // ── Task 20: First-run security setup ─────────────────────
+    const initMarker = join(homedir(), '.j41', 'jailbox-security-initialized');
+    if (!existsSync(initMarker)) {
+      console.log('');
+      console.log(chalk.cyan('  J41 Jailbox Security Setup (first run)'));
+      console.log('');
+      const secureSetupFirst = await loadSecureSetup();
+      if (secureSetupFirst) {
+        try {
+          await secureSetupFirst.setup('jailbox');
+          console.log(chalk.green('  Security setup complete'));
+        } catch (e: any) {
+          console.error(chalk.red(`  Security setup failed: ${e.message}`));
+          console.error('  Run manually: yarn dlx @j41/secure-setup --jailbox');
+        }
+      } else {
+        console.warn(chalk.yellow('  @j41/secure-setup not installed.'));
+        console.warn(chalk.yellow('  Install: yarn add @j41/secure-setup'));
+      }
+      console.log('');
+    }
+
+    // ── Task 21: Startup security quick-check ─────────────────
+    const secureSetupMod = await loadSecureSetup();
+    if (secureSetupMod) {
+      try {
+        const checkResult = secureSetupMod.quickCheck('jailbox');
+        if (!checkResult.passed) {
+          console.error('');
+          console.error(chalk.red('  SECURITY CHECK FAILED'));
+          for (const issue of checkResult.issues) {
+            console.error(chalk.red(`  - ${issue}`));
+          }
+          console.error('');
+          console.error('  Fix: yarn dlx @j41/secure-setup --jailbox --fix');
+          process.exit(1);
+        }
+        feed.logStatus(`Security: ${checkResult.score}/10 (${checkResult.mode})`);
+      } catch (e: any) {
+        feed.logStatus(`Security quick-check unavailable: ${e.message}`);
+      }
+    }
+
     // ── 1. Git check ───────────────────────────────────────────
     checkGitStatus(config.projectDir);
 
