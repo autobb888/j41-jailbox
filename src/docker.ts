@@ -183,7 +183,7 @@ export class DockerManager {
         ReadonlyRootfs: true,
         Tmpfs: { '/tmp': 'rw,noexec,nosuid,size=32m' },
         SecurityOpt: buildJailboxSecurityOpt(),
-        StorageOpt: { size: '512m' },
+        // StorageOpt requires xfs with pquota — omitted for ext4 compatibility
         OomScoreAdj: 1000,
         CapDrop: ['ALL'],
         // gVisor runtime (if configured as Docker default)

@@ -302,12 +302,12 @@ export async function run(config: JailboxConfig): Promise<void> {
     const secureSetupMod = await loadSecureSetup();
     if (secureSetupMod) {
       try {
-        const checkResult = secureSetupMod.quickCheck('jailbox');
+        const checkResult = await secureSetupMod.quickCheck('jailbox');
         if (!checkResult.passed) {
           console.error('');
           console.error(chalk.red('  SECURITY CHECK FAILED'));
-          for (const issue of checkResult.issues) {
-            console.error(chalk.red(`  - ${issue}`));
+          for (const c of checkResult.checks.filter((c: any) => c.status === 'fail')) {
+            console.error(chalk.red(`  - ${c.name}: ${c.detail}`));
           }
           console.error('');
           console.error('  Fix: yarn dlx @j41/secure-setup --jailbox --fix');

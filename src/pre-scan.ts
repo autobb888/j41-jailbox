@@ -251,30 +251,26 @@ async function interactiveExclusions(exclusions: ExclusionEntry[]): Promise<Excl
   const selected = new Array(exclusions.length).fill(true); // all excluded by default
   const expanded = new Array(exclusions.length).fill(false);
   let cursor = 0;
-  let prevRenderLines = 0;
+  let linesWritten = 0;
 
   return new Promise((resolve) => {
     const stdin = process.stdin;
     const wasRaw = stdin.isRaw;
 
-    function countRenderLines(): number {
-      let lines = 2; // header + blank line
-      for (let i = 0; i < exclusions.length; i++) {
-        lines++; // the item line
-        if (expanded[i] && exclusions[i].matches?.length) {
-          lines += exclusions[i].matches!.length;
-        }
-      }
-      return lines;
+    function writeLn(text: string) {
+      process.stdout.write(text + '\n');
+      linesWritten++;
     }
 
     function render() {
       const cols = process.stdout.columns || 80;
       // Move cursor up to overwrite previous render
-      if (prevRenderLines > 0) {
-        process.stdout.write(`\x1b[${prevRenderLines}A\x1b[J`);
+      if (linesWritten > 0) {
+        process.stdout.write(`\x1b[${linesWritten}A\x1b[J`);
       }
-      console.log(chalk.cyan('  SPACE toggle | ←→ details | ENTER confirm | ESC cancel\n'));
+      linesWritten = 0;
+      writeLn(chalk.cyan('  SPACE toggle | \u2190\u2192 details | ENTER confirm | ESC cancel'));
+      writeLn('');
       // Dynamic column widths based on terminal size
       const pathMax = Math.max(20, Math.min(40, Math.floor(cols * 0.35)));
       const reasonMax = Math.max(15, Math.min(35, Math.floor(cols * 0.3)));
@@ -282,30 +278,29 @@ async function interactiveExclusions(exclusions: ExclusionEntry[]): Promise<Excl
         const marker = selected[i] ? chalk.red('[x]') : chalk.green('[ ]');
         const arrow = i === cursor ? chalk.white('> ') : '  ';
         const clipped = clipPath(exclusions[i].path, pathMax);
-        const name = selected[i] ? chalk.gray(clipped) : chalk.white(clipped);
         const reasonText = exclusions[i].reason.length > reasonMax
-          ? exclusions[i].reason.slice(0, reasonMax - 1) + '…' : exclusions[i].reason;
-        const reason = chalk.gray(`— ${reasonText}`);
+          ? exclusions[i].reason.slice(0, reasonMax - 1) + '\u2026' : exclusions[i].reason;
+        const reason = chalk.gray(`\u2014 ${reasonText}`);
         const hasMatches = exclusions[i].matches && exclusions[i].matches!.length > 0;
-        const expandIcon = hasMatches ? (expanded[i] ? chalk.gray(' ▼') : chalk.gray(' ▶')) : '';
-        console.log(`${arrow}${marker} ${clipped.padEnd(pathMax)} ${reason}${expandIcon}`);
+        const expandIcon = hasMatches ? (expanded[i] ? chalk.gray(' \u25BC') : chalk.gray(' \u25B6')) : '';
+        writeLn(`${arrow}${marker} ${clipped.padEnd(pathMax)} ${reason}${expandIcon}`);
         if (expanded[i] && exclusions[i].matches?.length) {
-          const matchTextMax = Math.max(20, cols - 25); // 7 indent + L##: + flag
+          const matchTextMax = Math.max(20, cols - 25);
           for (const m of exclusions[i].matches!) {
             const lineNum = chalk.yellow(`L${m.line}`);
             const mText = m.text.length > matchTextMax
               ? m.text.slice(0, matchTextMax - 3) + '...' : m.text;
             const flag = chalk.red(`[${m.flag}]`);
-            console.log(`       ${lineNum}: ${chalk.white(mText)}  ${flag}`);
+            writeLn(`       ${lineNum}: ${chalk.white(mText)}  ${flag}`);
           }
         }
       }
-      prevRenderLines = countRenderLines();
     }
 
-    // Initial render (print blank lines first so the up-cursor works)
-    prevRenderLines = countRenderLines();
-    for (let i = 0; i < prevRenderLines; i++) console.log('');
+    // Reserve space then render into it
+    const initialLines = 2 + exclusions.length;
+    for (let i = 0; i < initialLines; i++) process.stdout.write('\n');
+    linesWritten = initialLines;
     render();
 
     if (stdin.isTTY) stdin.setRawMode(true);
