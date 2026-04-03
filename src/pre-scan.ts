@@ -309,6 +309,13 @@ async function interactiveExclusions(exclusions: ExclusionEntry[]): Promise<Excl
     function onData(key: Buffer) {
       const s = key.toString();
 
+      if (s === '\x03') {
+        // Ctrl+C — clean exit
+        cleanup();
+        process.stdout.write('\n');
+        process.exit(0);
+      }
+
       if (s === '\x1b' || s === 'q') {
         // ESC or q — cancel, keep original
         cleanup();

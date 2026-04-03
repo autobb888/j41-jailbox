@@ -32,6 +32,11 @@ export class Supervisor {
       output: process.stdout,
     });
 
+    // Relay Ctrl+C to process — readline in terminal mode absorbs SIGINT
+    this.rl.on('SIGINT', () => {
+      process.emit('SIGINT');
+    });
+
     this.rl.on('line', (line) => {
       const input = line.trim().toLowerCase();
 
