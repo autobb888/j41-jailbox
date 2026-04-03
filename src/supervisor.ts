@@ -30,11 +30,7 @@ export class Supervisor {
     this.rl = createInterface({
       input: process.stdin,
       output: process.stdout,
-    });
-
-    // Relay Ctrl+C to process — readline in terminal mode absorbs SIGINT
-    this.rl.on('SIGINT', () => {
-      process.emit('SIGINT');
+      terminal: false, // Keep stdin in cooked mode so Ctrl+C delivers SIGINT normally
     });
 
     this.rl.on('line', (line) => {
