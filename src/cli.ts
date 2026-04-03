@@ -253,10 +253,25 @@ export async function run(config: JailboxConfig): Promise<void> {
   }
 
   // ── Signal handlers ──────────────────────────────────────────
+  let signalCount = 0;
   const handleSignal = async () => {
-    feed.logStatus('Shutting down...');
+    signalCount++;
+    if (signalCount >= 2) {
+      // Force exit — cleanup is stuck
+      console.error(chalk.red('\nForce exiting...'));
+      try { execSync(`docker rm -f $(docker ps -q --filter name=j41-jailbox-)`, { stdio: 'ignore' }); } catch {}
+      process.exit(1);
+    }
+    feed.logStatus('Shutting down... (Ctrl+C again to force)');
     relay.sendAbort();
+    // Timeout cleanup to prevent hanging on Docker
+    const cleanupTimeout = setTimeout(() => {
+      console.error(chalk.red('Cleanup timed out — force exiting'));
+      try { execSync(`docker rm -f $(docker ps -q --filter name=j41-jailbox-)`, { stdio: 'ignore' }); } catch {}
+      process.exit(1);
+    }, 10_000);
     await cleanup();
+    clearTimeout(cleanupTimeout);
     process.exit(0);
   };
 
