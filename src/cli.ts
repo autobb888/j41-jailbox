@@ -539,6 +539,12 @@ export async function run(config: JailboxConfig): Promise<void> {
       feed.logStatus('Agent done. Type \'accept\' to confirm or \'abort\' to cancel.');
     });
 
+    relay.onSessionEnd((data) => {
+      const reason = data?.reason || 'job ended';
+      feed.logStatus(`Session ended by platform: ${reason}`);
+      cleanup().then(() => process.exit(0));
+    });
+
     // ── 6. Handle MCP calls from agent ─────────────────────────
 
     relay.onMcpCallReceived(async (call: McpCall) => {

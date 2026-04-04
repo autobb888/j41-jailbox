@@ -17,6 +17,7 @@ export class RelayClient {
   private onMcpCall: ((call: McpCall) => void) | null = null;
   private onStatusChanged: ((status: string, data?: any) => void) | null = null;
   private onAgentDone: (() => void) | null = null;
+  private onSessionEnded: ((data?: any) => void) | null = null;
   private onError: ((error: { code: string; message: string }) => void) | null = null;
 
   connect(apiUrl: string, auth: { type: string; uid?: string; reconnectToken?: string }): Promise<void> {
@@ -60,6 +61,11 @@ export class RelayClient {
         this.onStatusChanged?.('agent_disconnected', data);
       });
 
+      // Session ended by platform (job closed, review submitted, etc.)
+      this.socket.on('jailbox:session_ended', (data: any) => {
+        this.onSessionEnded?.(data);
+      });
+
       // Relay errors
       this.socket.on('ws:error', (data: { code: string; message: string }) => {
         this.onError?.(data);
@@ -68,6 +74,8 @@ export class RelayClient {
       this.socket.on('disconnect', (reason) => {
         this.stopKeepalive();
         if (reason === 'io server disconnect') {
+          // Server intentionally kicked us — don't reconnect
+          if (this.socket) this.socket.io.opts.reconnection = false;
           this.onStatusChanged?.('disconnected', { reason: 'server' });
         } else {
           // Transport disconnect — Socket.IO will auto-reconnect
@@ -106,6 +114,7 @@ export class RelayClient {
   onMcpCallReceived(handler: (call: McpCall) => void): void { this.onMcpCall = handler; }
   onStatusChange(handler: (status: string, data?: any) => void): void { this.onStatusChanged = handler; }
   onAgentCompletion(handler: () => void): void { this.onAgentDone = handler; }
+  onSessionEnd(handler: (data?: any) => void): void { this.onSessionEnded = handler; }
   onRelayError(handler: (error: { code: string; message: string }) => void): void { this.onError = handler; }
 
   disconnect(): void {
