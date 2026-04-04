@@ -60,6 +60,22 @@ function detectGvisorRuntime(): string | undefined {
   }
 }
 
+let _storageOptSupported: boolean | null = null;
+function supportsStorageOpt(): boolean {
+  if (_storageOptSupported !== null) return _storageOptSupported;
+  try {
+    const driver = execSync('docker info --format "{{.Driver}}"', {
+      encoding: 'utf8', timeout: 5000,
+    }).trim();
+    if (driver !== 'overlay2') { _storageOptSupported = false; return false; }
+    execSync('mount | grep pquota', { encoding: 'utf8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] });
+    _storageOptSupported = true;
+  } catch {
+    _storageOptSupported = false;
+  }
+  return _storageOptSupported;
+}
+
 function getJailboxBwrapOverrides(): Partial<Record<string, any>> {
   // Only use bwrap if gVisor is NOT the runtime
   if (detectGvisorRuntime()) return {};
@@ -183,7 +199,8 @@ export class DockerManager {
         ReadonlyRootfs: true,
         Tmpfs: { '/tmp': 'rw,noexec,nosuid,size=32m' },
         SecurityOpt: buildJailboxSecurityOpt(),
-        // StorageOpt requires xfs with pquota — omitted for ext4 compatibility
+        // StorageOpt only works on overlay2+xfs with pquota — omit if unsupported
+        ...(supportsStorageOpt() ? { StorageOpt: { size: '512m' } } : {}),
         OomScoreAdj: 1000,
         CapDrop: ['ALL'],
         // gVisor runtime (if configured as Docker default)
