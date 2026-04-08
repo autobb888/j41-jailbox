@@ -101,6 +101,9 @@ export function parseArgs(argv: string[]): JailboxConfig {
   const mode: JailboxMode = opts.readonly ? 'readonly' : opts.standard ? 'standard' : 'supervised';
 
   // Readonly mode overrides --write
+  if (opts.readonly && opts.write) {
+    console.warn(chalk.yellow('Warning: --readonly overrides --write. No writes will be allowed.'));
+  }
   const permissions = { read: true, write: opts.readonly ? false : !!opts.write };
 
   return {
@@ -583,39 +586,13 @@ export async function run(config: JailboxConfig): Promise<void> {
 
       // Check exclusion list
       if (isExcluded(relPath, exclusions)) {
-        const meta: OperationMetadata = {
-          operation: toolName === 'list_directory' ? 'list_dir' : toolName as any,
-          path: relPath,
-          sovguardScore: 0,
-          blocked: true,
-          blockReason: 'excluded file',
-        };
-        feed.logOperation(meta);
-        relay.sendResult({
-          id: call.id,
-          success: false,
-          error: 'File is excluded from jailbox',
-          metadata: meta,
-        });
+        blockOperation('excluded file', 'File is excluded from jailbox');
         return;
       }
 
       // Check session transfer limit
       if (sessionTransferBytes > MAX_SESSION_TRANSFER) {
-        const meta: OperationMetadata = {
-          operation: toolName as any,
-          path: relPath,
-          sovguardScore: 0,
-          blocked: true,
-          blockReason: 'session transfer limit exceeded (500MB)',
-        };
-        feed.logOperation(meta);
-        relay.sendResult({
-          id: call.id,
-          success: false,
-          error: 'Session transfer limit exceeded',
-          metadata: meta,
-        });
+        blockOperation('session transfer limit exceeded (500MB)', 'Session transfer limit exceeded');
         return;
       }
 
@@ -624,15 +601,11 @@ export async function run(config: JailboxConfig): Promise<void> {
       const isWrite = toolName === 'write_file';
 
       if (isRead && !limiter.canRead()) {
-        const meta: OperationMetadata = { operation: toolName as any, path: relPath, sovguardScore: 0, blocked: true, blockReason: limiter.blockReason() };
-        feed.logOperation(meta);
-        relay.sendResult({ id: call.id, success: false, error: limiter.blockReason(), metadata: meta });
+        blockOperation(limiter.blockReason(), limiter.blockReason());
         return;
       }
       if (isWrite && !limiter.canWrite()) {
-        const meta: OperationMetadata = { operation: toolName as any, path: relPath, sovguardScore: 0, blocked: true, blockReason: limiter.blockReason() };
-        feed.logOperation(meta);
-        relay.sendResult({ id: call.id, success: false, error: limiter.blockReason(), metadata: meta });
+        blockOperation(limiter.blockReason(), limiter.blockReason());
         return;
       }
 
@@ -720,8 +693,11 @@ export async function run(config: JailboxConfig): Promise<void> {
                   feed.logStatus('SovGuard scanning disabled for this session');
                 }
               } else {
-                sovguardClient.disable();
-                feed.logStatus('SovGuard scanning disabled for this session (API unreachable)');
+                // Standard mode: abort session — can't scan, can't ask buyer
+                feed.logError('SovGuard API unreachable after 3 failures — aborting session');
+                relay.sendAbort();
+                await cleanup();
+                process.exit(1);
               }
             } else {
               if (supervisor) {
@@ -876,20 +852,7 @@ export async function run(config: JailboxConfig): Promise<void> {
           }
         }
       } catch (err: any) {
-        const meta: OperationMetadata = {
-          operation: toolName as any,
-          path: relPath,
-          sovguardScore: 0,
-          blocked: true,
-          blockReason: err.message,
-        };
-        feed.logOperation(meta);
-        relay.sendResult({
-          id: call.id,
-          success: false,
-          error: err.message,
-          metadata: meta,
-        });
+        blockOperation(err.message, err.message);
       }
     });
 

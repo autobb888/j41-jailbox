@@ -191,6 +191,11 @@ function readFile(relPath: string) {
 }
 
 function writeFile(relPath: string, content: string) {
+  // Defense-in-depth: check env var even though Docker mount is ro when writes are disabled
+  if (process.env.JAILBOX_WRITABLE === 'false') {
+    return { content: [{ type: 'text', text: 'Writes are disabled for this session' }], isError: true };
+  }
+
   const absPath = resolveSafe(relPath);
   if (!absPath) {
     return { content: [{ type: 'text', text: 'Path is outside the project directory' }], isError: true };
