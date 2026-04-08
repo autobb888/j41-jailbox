@@ -236,15 +236,22 @@ async function promptRawKey(message: string): Promise<string> {
 }
 
 async function promptConfirm(message: string): Promise<boolean> {
-  const ch = await promptRawKey(message);
-  return ch === 'y' || ch === '';
+  while (true) {
+    const ch = await promptRawKey(message);
+    if (ch === 'y' || ch === '') return true;
+    if (ch === 'a' || ch === 'n') return false;
+    process.stdout.write(chalk.gray('  Press Y/Enter to confirm or A to abort\n'));
+  }
 }
 
 async function promptChoice(message: string): Promise<string> {
-  const ch = await promptRawKey(message);
-  if (ch === 'a') return 'a';
-  if (ch === 'e') return 'e';
-  return 'y';
+  while (true) {
+    const ch = await promptRawKey(message);
+    if (ch === 'y' || ch === '') return 'y';
+    if (ch === 'a') return 'a';
+    if (ch === 'e') return 'e';
+    process.stdout.write(chalk.gray('  Press Y/Enter, A to abort, or E to edit\n'));
+  }
 }
 
 async function interactiveExclusions(exclusions: ExclusionEntry[]): Promise<ExclusionEntry[]> {

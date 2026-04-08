@@ -551,23 +551,34 @@ export async function run(config: JailboxConfig): Promise<void> {
       const toolName = call.tool;
       const relPath = call.params?.path || '.';
 
-      // I5 fix: enforce --write permission
-      if (toolName === 'write_file' && !config.permissions.write) {
+      // Centralized block helper — logs to audit trail and sends failure to relay
+      function blockOperation(reason: string, error: string, extraMeta?: Partial<OperationMetadata>) {
         const meta: OperationMetadata = {
-          operation: 'write',
+          operation: toolName as any,
           path: relPath,
           sovguardScore: 0,
           blocked: true,
-          blockReason: 'write permission not granted (run with --write)',
+          blockReason: reason,
+          ...extraMeta,
         };
-        feed.logOperation(meta);
-        relay.sendResult({
-          id: call.id,
-          success: false,
-          error: 'Write permission not granted',
-          metadata: meta,
-        });
+        feed.logOperation(meta, false);
+        auditLog.record(`${toolName}_blocked`, relPath, 0, '');
+        relay.sendResult({ id: call.id, success: false, error, metadata: meta });
+      }
+
+      // I5 fix: enforce --write permission
+      if (toolName === 'write_file' && !config.permissions.write) {
+        blockOperation('write permission not granted (run with --write)', 'Write permission not granted');
         return;
+      }
+
+      // Check scope restriction
+      if (config.scope && config.scope.length > 0) {
+        const inScope = config.scope.some(dir => relPath === dir || relPath.startsWith(dir + '/'));
+        if (!inScope) {
+          blockOperation(`path outside allowed scope (${config.scope.join(', ')})`, `Path outside scope: ${relPath}`);
+          return;
+        }
       }
 
       // Check exclusion list
@@ -677,6 +688,20 @@ export async function run(config: JailboxConfig): Promise<void> {
               relay.sendResult({ id: call.id, success: false, error: 'Write rejected — too large for scan', metadata: meta });
               return;
             }
+          } else {
+            // Standard mode: block oversized writes — cannot scan, fail secure
+            const meta: OperationMetadata = {
+              operation: 'write_file',
+              path: relPath,
+              sizeBytes: writeContent.length,
+              sovguardScore: 0,
+              blocked: true,
+              blockReason: `write too large for SovGuard scan (${sizeKB}KB) — blocked`,
+            };
+            feed.logOperation(meta, false);
+            feed.logError(`Write blocked: ${relPath} — too large for scan (${sizeKB}KB)`);
+            relay.sendResult({ id: call.id, success: false, error: 'Write blocked — too large for SovGuard scan', metadata: meta });
+            return;
           }
         } else {
           const mimeType = 'text/plain';
@@ -713,6 +738,19 @@ export async function run(config: JailboxConfig): Promise<void> {
                   relay.sendResult({ id: call.id, success: false, error: 'SovGuard API unreachable', metadata: meta });
                   return;
                 }
+              } else {
+                // Standard mode: block unscanned writes by default — fail secure
+                const meta: OperationMetadata = {
+                  operation: 'write_file',
+                  path: relPath,
+                  sovguardScore: 0,
+                  blocked: true,
+                  blockReason: 'SovGuard API unreachable — write blocked (fail-secure)',
+                };
+                feed.logOperation(meta, false);
+                feed.logError(`Write blocked: ${relPath} — SovGuard API unreachable`);
+                relay.sendResult({ id: call.id, success: false, error: 'SovGuard API unreachable — write blocked', metadata: meta });
+                return;
               }
             }
           } else if (!scanResult.safe) {
@@ -795,7 +833,7 @@ export async function run(config: JailboxConfig): Promise<void> {
           sizeBytes,
           contentHash: mcpMeta.contentHash,
           sovguardScore: runtimeSovguardScore,
-          approved: toolName === 'write_file' ? true : undefined,
+          approved: toolName === 'write_file' ? (config.mode === 'supervised') : undefined,
           blocked: !!result.isError,
           blockReason: result.isError ? result.content?.[0]?.text : undefined,
         };
@@ -814,13 +852,14 @@ export async function run(config: JailboxConfig): Promise<void> {
         if (!result.isError) {
           if (isRead) limiter.recordRead();
           if (isWrite) limiter.recordWrite();
-          auditLog.record(
-            toolName,
-            mcpMeta.path || relPath,
-            sizeBytes,
-            mcpMeta.contentHash || '',
-          );
         }
+        // Always record in audit log — both successful and failed operations
+        auditLog.record(
+          result.isError ? `${toolName}_blocked` : toolName,
+          mcpMeta.path || relPath,
+          sizeBytes,
+          mcpMeta.contentHash || '',
+        );
 
         // Fire-and-forget SovGuard read scan
         if (toolName === 'read_file' && sovguardClient && !sovguardClient.isDisabled() && !result.isError) {

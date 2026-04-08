@@ -76,32 +76,26 @@ function supportsStorageOpt(): boolean {
   return _storageOptSupported;
 }
 
-function getJailboxBwrapOverrides(): Partial<Record<string, any>> {
+function getJailboxBwrapEntrypoint(): string | undefined {
   // Only use bwrap if gVisor is NOT the runtime
-  if (detectGvisorRuntime()) return {};
+  if (detectGvisorRuntime()) return undefined;
 
   try {
     execSync('which bwrap', { stdio: 'ignore', timeout: 3000 });
   } catch {
-    return {}; // bwrap not installed
+    return undefined; // bwrap not installed
   }
 
   // Find the entrypoint script from @j41/secure-setup
-  let entrypointPath: string | undefined;
   try {
     const setupPkg = require.resolve('@j41/secure-setup');
-    entrypointPath = join(dirname(setupPkg), '..', 'scripts', 'entrypoint-jailbox.sh');
-    if (!existsSync(entrypointPath)) entrypointPath = undefined;
+    const entrypointPath = join(dirname(setupPkg), '..', 'scripts', 'entrypoint-jailbox.sh');
+    if (existsSync(entrypointPath)) return entrypointPath;
   } catch {
     // @j41/secure-setup not installed
   }
 
-  if (!entrypointPath) return {};
-
-  return {
-    CapDrop: [],
-    CapAdd: ['SYS_ADMIN'],
-  };
+  return undefined;
 }
 
 export class DockerManager {
@@ -205,11 +199,12 @@ export class DockerManager {
         CapDrop: ['ALL'],
         // gVisor runtime (if configured as Docker default)
         ...(detectGvisorRuntime() ? { Runtime: 'runsc' } : {}),
-        // bwrap overrides (degraded mode — only if gVisor unavailable)
-        ...getJailboxBwrapOverrides(),
+        // NEVER override CapDrop — bwrap runs inside the container's own user namespace
       },
       Env: [
         `JAILBOX_WRITABLE=${options?.writable ? 'true' : 'false'}`,
+        // Pass bwrap entrypoint path if available (container reads from env, not capabilities)
+        ...(getJailboxBwrapEntrypoint() ? [`JAILBOX_BWRAP_ENTRYPOINT=${getJailboxBwrapEntrypoint()}`] : []),
       ],
     });
 
