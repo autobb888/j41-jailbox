@@ -18,6 +18,7 @@ export class Supervisor {
   private pendingResolve: ((approved: boolean) => void) | null = null;
   private pendingSovguardResolve: ((decision: 'approve' | 'reject' | 'report') => void) | null = null;
   private fallbackHandler: ((cmd: string) => void) | null = null;
+  private _approvalQueue: Promise<void> = Promise.resolve();
   private commandHandler: ((cmd: string) => void) | null = null;
   private rl: Interface;
 
@@ -119,6 +120,19 @@ export class Supervisor {
   }
 
   async promptWriteApproval(
+    path: string,
+    proposedContent: string,
+    projectDir: string,
+  ): Promise<boolean> {
+    // Serialize approval prompts to prevent race conditions
+    return new Promise<boolean>((outerResolve) => {
+      this._approvalQueue = this._approvalQueue.then(() =>
+        this._doPromptWriteApproval(path, proposedContent, projectDir).then(outerResolve)
+      );
+    });
+  }
+
+  private async _doPromptWriteApproval(
     path: string,
     proposedContent: string,
     projectDir: string,

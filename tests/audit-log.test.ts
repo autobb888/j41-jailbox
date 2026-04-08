@@ -1,5 +1,4 @@
-import { describe, it } from 'node:test';
-import assert from 'node:assert';
+import { describe, it, expect } from 'vitest';
 import { AuditLog } from '../src/audit-log.js';
 
 describe('AuditLog', () => {
@@ -9,13 +8,13 @@ describe('AuditLog', () => {
     log.record('write_file', 'src/fix.ts', 512, 'sha256:def456');
 
     const entries = log.getEntries();
-    assert.strictEqual(entries.length, 2);
-    assert.strictEqual(entries[0].seq, 1);
-    assert.strictEqual(entries[0].op, 'read_file');
-    assert.strictEqual(entries[0].path, 'src/app.ts');
-    assert.strictEqual(entries[0].prev_hash, 'sha256:0000000000000000000000000000000000000000000000000000000000000000');
-    assert.strictEqual(entries[1].seq, 2);
-    assert.strictEqual(entries[1].prev_hash, entries[0].hash);
+    expect(entries.length).toBe(2);
+    expect(entries[0].seq).toBe(1);
+    expect(entries[0].op).toBe('read_file');
+    expect(entries[0].path).toBe('src/app.ts');
+    expect(entries[0].prev_hash).toBe('sha256:0000000000000000000000000000000000000000000000000000000000000000');
+    expect(entries[1].seq).toBe(2);
+    expect(entries[1].prev_hash).toBe(entries[0].hash);
   });
 
   it('detects tampering via broken hash chain', () => {
@@ -23,24 +22,24 @@ describe('AuditLog', () => {
     log.record('read_file', 'a.ts', 100, 'sha256:aaa');
     log.record('read_file', 'b.ts', 200, 'sha256:bbb');
 
-    assert.ok(log.verifyChain());
+    expect(log.verifyChain()).toBe(true);
 
     // Tamper with entry
     const entries = log.getEntries();
     entries[0].path = 'hacked.ts';
-    assert.ok(!log.verifyChain());
+    expect(log.verifyChain()).toBe(false);
   });
 
   it('exports public key for verification', () => {
     const log = new AuditLog();
     const pubKey = log.getPublicKey();
-    assert.ok(pubKey.length > 0);
+    expect(pubKey.length).toBeGreaterThan(0);
   });
 
   it('verifies signatures', () => {
     const log = new AuditLog();
     log.record('read_file', 'test.ts', 42, 'sha256:test');
     const entries = log.getEntries();
-    assert.ok(log.verifySignature(entries[0]));
+    expect(log.verifySignature(entries[0])).toBe(true);
   });
 });

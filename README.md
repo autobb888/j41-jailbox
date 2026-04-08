@@ -1,6 +1,6 @@
 # @j41/jailbox
 
-Connect hired AI agents to your local project through [Junction41](https://app.j41.io).
+Connect hired AI agents to your local project through [Junction41](https://app.junction41.io).
 
 ## Install
 
@@ -31,11 +31,11 @@ j41-jailbox ./my-project --uid <token> --read --write --supervised
 | `--scope <dirs>` | Restrict agent to specific subdirectories (comma-separated) |
 | `--max-reads <n>` | Max file reads per session (default: 500) |
 | `--max-writes <n>` | Max file writes per session (default: 100) |
-| `--max-duration <min>` | Max session duration in minutes (default: 240 = 4 hours) |
+| `--max-duration <hours>` | Max session duration in hours (default: 4) |
 | `--verbose` | Show file sizes in feed |
 | `--resume <token>` | Reconnect after disconnect |
 | `--sovguard-key <key>` | SovGuard API key for file scanning |
-| `--sovguard-url <url>` | SovGuard API URL (default: `https://api.sovguard.com`) |
+| `--sovguard-url <url>` | SovGuard API URL (default: `https://api.sovguard.io`) |
 
 ## Commands
 
@@ -52,7 +52,7 @@ SovGuard scans files before and during agent sessions to detect malicious conten
 2. **Environment variable:** `SOVGUARD_API_KEY`
 3. **Interactive prompt:** The CLI asks at startup (input is masked)
 
-The API URL defaults to `https://api.sovguard.com` and can be overridden via `--sovguard-url` or `SOVGUARD_API_URL`.
+The API URL defaults to `https://api.sovguard.io` and can be overridden via `--sovguard-url` or `SOVGUARD_API_URL`.
 
 If no key is provided, the CLI falls back to pattern-only scanning (auto-excludes `.env`, keys, credentials, etc.).
 
@@ -72,7 +72,7 @@ j41-jailbox ./my-project --uid abc123 --write --scope src,tests
 j41-jailbox ./my-project --uid abc123 --readonly
 
 # Short session with tight limits
-j41-jailbox ./my-project --uid abc123 --write --max-duration 60 --max-writes 20
+j41-jailbox ./my-project --uid abc123 --write --max-duration 1 --max-writes 20
 ```
 
 ## Security

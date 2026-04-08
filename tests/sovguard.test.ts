@@ -19,7 +19,7 @@ describe('SovGuardClient', () => {
 
   const baseConfig: SovGuardConfig = {
     apiKey: 'sg_test_key',
-    apiUrl: 'https://test.sovguard.com',
+    apiUrl: 'https://test.sovguard.io',
   };
 
   describe('scanContent', () => {

@@ -10,7 +10,6 @@ export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 export const MAX_SESSION_TRANSFER = 500 * 1024 * 1024; // 500MB
 export const MAX_DIR_ENTRIES = 10_000;
 export const DIFF_PREVIEW_LINES = 20;
-export const RECONNECT_GRACE_SECONDS = 300; // 5 minutes
 
 // Patterns to auto-exclude during pre-scan
 export const AUTO_EXCLUDE_PATTERNS = [

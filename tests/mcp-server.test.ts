@@ -4,7 +4,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 
 // We need to test with a custom jailbox root
-// Since mcp-server uses a hardcoded WORKSPACE_ROOT = '/jailbox',
+// Since mcp-server uses a hardcoded JAILBOX_ROOT = '/jailbox',
 // we'll test resolveSafe logic directly and file ops via the exported functions
 
 describe('mcp-server', () => {
@@ -86,7 +86,7 @@ describe('mcp-server', () => {
       writeFileSync(join(tempDir, 'file.txt'), 'hello');
       writeFileSync(join(tempDir, 'subdir', 'nested.txt'), 'nested');
 
-      // Note: listDirectory uses the hardcoded WORKSPACE_ROOT = '/jailbox'
+      // Note: listDirectory uses the hardcoded JAILBOX_ROOT = '/jailbox'
       // We can't easily override it, so we test return shape and error handling
       const mod = await import('../src/mcp-server.js');
       listDirectory = mod.listDirectory;

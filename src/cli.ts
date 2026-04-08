@@ -30,12 +30,7 @@ async function loadSecureSetup(): Promise<any> {
     // @ts-ignore — not on npm yet; graceful fallback below
     return await import('@j41/secure-setup');
   } catch {
-    try {
-      // @ts-ignore — local dev path, no type declarations
-      return await import('../../j41-secure-setup/lib/index.js');
-    } catch {
-      return null;
-    }
+    return null;
   }
 }
 
@@ -45,7 +40,7 @@ export function parseArgs(argv: string[]): JailboxConfig {
   program
     .name('j41-jailbox')
     .description('Connect hired AI agents to your local project through Junction41')
-    .version('0.1.0')
+    .version('2.0.0')
     .argument('<directory>', 'Project directory to share with the agent')
     .option('--uid <token>', 'Jailbox UID from dashboard')
     .option('--resume <token>', 'Reconnect with fresh reconnect token')
@@ -458,7 +453,7 @@ export async function run(config: JailboxConfig): Promise<void> {
     await callMcpServer('initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'j41-jailbox', version: '0.1.0' },
+      clientInfo: { name: 'j41-jailbox', version: '2.0.0' },
     });
 
     // ── 4. Connect to relay ────────────────────────────────────
@@ -693,11 +688,18 @@ export async function run(config: JailboxConfig): Promise<void> {
                   feed.logStatus('SovGuard scanning disabled for this session');
                 }
               } else {
-                // Standard mode: abort session — can't scan, can't ask buyer
-                feed.logError('SovGuard API unreachable after 3 failures — aborting session');
-                relay.sendAbort();
-                await cleanup();
-                process.exit(1);
+                // In standard mode (no supervisor), do NOT auto-disable SovGuard.
+                // Block the write instead — agent can retry later.
+                feed.logStatus('SovGuard API unreachable — write blocked for safety');
+                const blockedMeta: OperationMetadata = { operation: toolName as any, path: relPath, sovguardScore: 0, blocked: true, blockReason: 'SovGuard API unreachable' };
+                feed.logOperation(blockedMeta);
+                relay.sendResult({
+                  id: call.id,
+                  success: false,
+                  error: 'Write blocked: SovGuard scanning unavailable. Please retry later.',
+                  metadata: blockedMeta,
+                });
+                return;
               }
             } else {
               if (supervisor) {

@@ -50,7 +50,7 @@ async function handleMessage(msg: any): Promise<any> {
       result: {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {} },
-        serverInfo: { name: 'j41-jailbox-mcp', version: '0.1.0' },
+        serverInfo: { name: 'j41-jailbox-mcp', version: '2.0.0' },
       },
     };
   }
@@ -178,7 +178,7 @@ function readFile(relPath: string) {
   // Check if binary
   const buffer = readFileSync(absPath);
   if (isBinary(buffer)) {
-    return { content: [{ type: 'text', text: 'Binary files are not supported in v1' }], isError: true };
+    return { content: [{ type: 'text', text: 'Binary files are not supported' }], isError: true };
   }
 
   const text = buffer.toString('utf-8');
@@ -246,20 +246,25 @@ function resolveSafe(relPath: string): string | null {
     }
   }
 
-  // Path doesn't exist yet (write_file creates it) — check parent
-  const parentDir = resolve(absPath, '..');
-  if (existsSync(parentDir)) {
-    try {
-      const realParent = realpathSync(parentDir);
-      if (!realParent.startsWith(JAILBOX_ROOT + '/') && realParent !== JAILBOX_ROOT) {
-        return null; // Parent symlink escapes jailbox
+  // Path doesn't exist yet (write_file creates it) — walk up ancestor chain
+  // to find the nearest existing directory and verify its realpath is inside jailbox
+  let ancestor = resolve(absPath, '..');
+  while (ancestor !== resolve(ancestor, '..')) { // stop at filesystem root
+    if (existsSync(ancestor)) {
+      try {
+        const realAncestor = realpathSync(ancestor);
+        if (!realAncestor.startsWith(JAILBOX_ROOT + '/') && realAncestor !== JAILBOX_ROOT) {
+          return null; // Ancestor symlink escapes jailbox
+        }
+      } catch {
+        return null;
       }
-    } catch {
-      return null;
+      return absPath;
     }
+    ancestor = resolve(ancestor, '..');
   }
 
-  return absPath;
+  return null; // No existing ancestor inside jailbox
 }
 
 function isBinary(buffer: Buffer): boolean {

@@ -8,11 +8,14 @@
 import Docker from 'dockerode';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import { Writable, Readable, PassThrough } from 'stream';
 import { existsSync, readFileSync } from 'fs';
 import { homedir } from 'os';
 import { execSync } from 'child_process';
 import chalk from 'chalk';
+
+const require = createRequire(import.meta.url);
 
 const CONTAINER_NAME_PREFIX = 'j41-jailbox-';
 const MCP_IMAGE = 'node:18-alpine';

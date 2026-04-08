@@ -1,10 +1,13 @@
 {
   "name": "@j41/jailbox",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "description": "Sandbox hired AI agents in a jailbox connected to your local project through Junction41",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" }
+  },
   "bin": {
     "j41-jailbox": "dist/index.js"
   },
@@ -36,5 +39,8 @@
   "engines": {
     "node": ">=18.0.0"
   },
+  "author": "Junction41",
+  "repository": { "type": "git", "url": "https://github.com/junction41/j41-jailbox" },
+  "keywords": ["j41", "junction41", "jailbox", "sandbox", "docker", "workspace"],
   "license": "MIT"
 }

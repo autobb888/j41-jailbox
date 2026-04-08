@@ -17,4 +17,5 @@ COPY src/ ./src/
 RUN yarn build
 
 # Verify
-RUN node dist/index.js /tmp --uid test 2>&1 || true
+# Verify the build produced a valid entry point
+RUN node -e "require('./dist/index.js')"

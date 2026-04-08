@@ -148,15 +148,16 @@ export function resolveCredentials(cliFlags: {
 /**
  * Handle `j41-jailbox config <subcommand>` — called from index.ts pre-parse.
  */
-function readSecret(prompt: string): Promise<string> {
-  return new Promise((resolve) => {
-    const stdin = process.stdin;
-    if (!stdin.isTTY || typeof stdin.setRawMode !== 'function') {
-      const { createInterface } = require('readline');
-      const rl = createInterface({ input: stdin, output: process.stdout });
+async function readSecret(prompt: string): Promise<string> {
+  const stdin = process.stdin;
+  if (!stdin.isTTY || typeof stdin.setRawMode !== 'function') {
+    const { createInterface } = await import('readline');
+    const rl = createInterface({ input: stdin, output: process.stdout });
+    return new Promise<string>((resolve) => {
       rl.question(prompt, (answer: string) => { rl.close(); resolve(answer); });
-      return;
-    }
+    });
+  }
+  return new Promise((resolve) => {
     process.stdout.write(prompt);
     const wasRaw = stdin.isRaw;
     stdin.setRawMode(true);
