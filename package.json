@@ -1,5 +1,5 @@
 {
-  "name": "@j41/jailbox",
+  "name": "@junction41/jailbox",
   "version": "2.0.0",
   "description": "Sandbox hired AI agents in a jailbox connected to your local project through Junction41",
   "type": "module",

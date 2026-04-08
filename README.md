@@ -1,11 +1,11 @@
-# @j41/jailbox
+# @junction41/jailbox
 
 Connect hired AI agents to your local project through [Junction41](https://app.junction41.io).
 
 ## Install
 
 ```bash
-yarn global add @j41/jailbox
+yarn global add @junction41/jailbox
 ```
 
 ## Usage
@@ -79,7 +79,7 @@ j41-jailbox ./my-project --uid abc123 --write --max-duration 1 --max-writes 20
 
 ### Three-Wall Isolation
 
-On first run, jailbox auto-installs security isolation via `@j41/secure-setup`:
+On first run, jailbox auto-installs security isolation via `@junction41/secure-setup`:
 
 ```
 Buyer's machine

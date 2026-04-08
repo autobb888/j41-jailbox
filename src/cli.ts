@@ -28,7 +28,7 @@ const J41_API_URL = process.env.J41_API_URL || 'https://api.junction41.io';
 async function loadSecureSetup(): Promise<any> {
   try {
     // @ts-ignore — not on npm yet; graceful fallback below
-    return await import('@j41/secure-setup');
+    return await import('@junction41/secure-setup');
   } catch {
     return null;
   }
@@ -302,11 +302,11 @@ export async function run(config: JailboxConfig): Promise<void> {
           console.log(chalk.green('  Security setup complete'));
         } catch (e: any) {
           console.error(chalk.red(`  Security setup failed: ${e.message}`));
-          console.error('  Run manually: yarn dlx @j41/secure-setup --jailbox');
+          console.error('  Run manually: yarn dlx @junction41/secure-setup --jailbox');
         }
       } else {
-        console.warn(chalk.yellow('  @j41/secure-setup not installed.'));
-        console.warn(chalk.yellow('  Install: yarn add @j41/secure-setup'));
+        console.warn(chalk.yellow('  @junction41/secure-setup not installed.'));
+        console.warn(chalk.yellow('  Install: yarn add @junction41/secure-setup'));
       }
       console.log('');
     }
@@ -323,7 +323,7 @@ export async function run(config: JailboxConfig): Promise<void> {
             console.error(chalk.red(`  - ${c.name}: ${c.detail}`));
           }
           console.error('');
-          console.error('  Fix: yarn dlx @j41/secure-setup --jailbox --fix');
+          console.error('  Fix: yarn dlx @junction41/secure-setup --jailbox --fix');
           process.exit(1);
         }
         feed.logStatus(`Security: ${checkResult.score}/10 (${checkResult.mode})`);

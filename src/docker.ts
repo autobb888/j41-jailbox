@@ -28,7 +28,7 @@ const JAILBOX_MOUNT = '/jailbox';
 function buildJailboxSecurityOpt(): string[] {
   const opts = ['no-new-privileges:true'];
 
-  // Seccomp profile — deployed by @j41/secure-setup
+  // Seccomp profile — deployed by @junction41/secure-setup
   const seccompPath = process.platform === 'linux'
     ? '/etc/j41/seccomp-jailbox.json'
     : join(homedir(), '.j41', 'seccomp-jailbox.json');
@@ -89,13 +89,13 @@ function getJailboxBwrapEntrypoint(): string | undefined {
     return undefined; // bwrap not installed
   }
 
-  // Find the entrypoint script from @j41/secure-setup
+  // Find the entrypoint script from @junction41/secure-setup
   try {
-    const setupPkg = require.resolve('@j41/secure-setup');
+    const setupPkg = require.resolve('@junction41/secure-setup');
     const entrypointPath = join(dirname(setupPkg), '..', 'scripts', 'entrypoint-jailbox.sh');
     if (existsSync(entrypointPath)) return entrypointPath;
   } catch {
-    // @j41/secure-setup not installed
+    // @junction41/secure-setup not installed
   }
 
   return undefined;
