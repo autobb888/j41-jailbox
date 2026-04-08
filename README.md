@@ -97,7 +97,10 @@ Your project directory is mounted **read-only by default** at the Docker level:
 
 - Default: `:ro` — agent can read files but writes are blocked by the OS
 - `--write`: `:rw` — mount becomes read-write, but supervised mode still requires your approval per write
-- `--readonly`: `:ro` forced — overrides `--write` if both are passed
+- `--readonly`: `:ro` forced — overrides `--write` if both are passed (CLI warns)
+- `--scope src,tests` — only mounts those subdirectories, enforced at both the Docker mount level and the relay handler (defense-in-depth)
+
+The MCP server also checks the `JAILBOX_WRITABLE` env var independently — writes are blocked inside the container even if the mount is misconfigured.
 
 ### Symlink Protection
 
@@ -117,14 +120,17 @@ The session auto-kills when any limit is reached. The buyer is notified.
 
 ### Tamper-Evident Audit Log
 
-Every file operation is logged in a hash-chained, signed audit trail:
+Every file operation — successful and blocked — is logged in a hash-chained, signed audit trail:
 
 1. At session start, an ephemeral Ed25519 keypair is generated
 2. The public key is registered with the platform
-3. Each operation entry includes: sequence number, operation type, path, bytes, content hash, timestamp, previous entry hash, and signature
-4. At session end, the full log is uploaded to the platform
+3. Each entry includes: sequence number, operation type, path, bytes, content hash, timestamp, previous entry hash, and Ed25519 signature
+4. Blocked operations are recorded with a `_blocked` suffix (e.g., `write_file_blocked`)
+5. At session end, the full log is uploaded to the platform
 
-Anyone with the public key can verify the chain. Useful for disputes — cryptographic proof of exactly what the agent did.
+Anyone with the public key can verify the chain. Useful for disputes — cryptographic proof of exactly what the agent did and what was denied.
+
+In supervised mode, writes are stamped `approved: true` in the audit record. In standard mode, `approved: false` — so forensics can distinguish buyer-approved writes from unreviewed ones.
 
 ### Container Hardening
 
@@ -132,10 +138,10 @@ The MCP server container runs with:
 
 - `NetworkMode: 'none'` — zero network access
 - `ReadonlyRootfs: true` with tmpfs `/tmp`
-- `CapDrop: ['ALL']` — zero capabilities
+- `CapDrop: ['ALL']` — zero capabilities (never overridden, even with bwrap)
 - Custom seccomp profile (no network syscalls allowed)
 - AppArmor confinement (Linux)
-- `PidsLimit: 64`, `Memory: 512MB`, `StorageOpt: 512m`
+- `PidsLimit: 64`, `Memory: 512MB`
 
 ## Requirements
 
@@ -147,6 +153,14 @@ The MCP server container runs with:
 The CLI creates a Docker container with your project directory mounted. A sandboxed MCP server inside the container exposes `list_directory`, `read_file`, and `write_file` tools. The agent works through the Junction41 platform relay — file contents pass through but are never stored on the platform.
 
 SovGuard pre-scans your directory before the agent connects, flagging credentials and sensitive files via the SovGuard API. In supervised mode, every write shows a diff preview for your approval.
+
+### SovGuard Fail-Secure
+
+SovGuard scanning follows a fail-secure model:
+
+- **Supervised mode**: if SovGuard is unreachable or the file is too large to scan, the buyer is prompted to approve or reject
+- **Standard mode**: unscanned writes are **blocked by default** — no silent pass-through. If the SovGuard API fails 3 times consecutively, the session aborts
+- Pre-scan confirmation requires explicit `Y` or Enter — unknown keys re-prompt instead of proceeding
 
 ## License
 
