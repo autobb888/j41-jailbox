@@ -1,6 +1,6 @@
 {
   "name": "@junction41/jailbox",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Sandbox hired AI agents in a jailbox connected to your local project through Junction41",
   "type": "module",
   "main": "dist/index.js",
@@ -35,6 +35,9 @@
     "@types/node": "^20.0.0",
     "typescript": "^5.4.0",
     "vitest": "^4.1.2"
+  },
+  "optionalDependencies": {
+    "@junction41/secure-setup": ">=0.1.0"
   },
   "engines": {
     "node": ">=18.0.0"

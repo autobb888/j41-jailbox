@@ -302,11 +302,11 @@ export async function run(config: JailboxConfig): Promise<void> {
           console.log(chalk.green('  Security setup complete'));
         } catch (e: any) {
           console.error(chalk.red(`  Security setup failed: ${e.message}`));
-          console.error('  Run manually: yarn dlx @junction41/secure-setup --jailbox');
+          console.error('  Run manually: npx @junction41/secure-setup --jailbox');
         }
       } else {
         console.warn(chalk.yellow('  @junction41/secure-setup not installed.'));
-        console.warn(chalk.yellow('  Install: yarn add @junction41/secure-setup'));
+        console.warn(chalk.yellow('  Install: npm install @junction41/secure-setup'));
       }
       console.log('');
     }
@@ -323,7 +323,7 @@ export async function run(config: JailboxConfig): Promise<void> {
             console.error(chalk.red(`  - ${c.name}: ${c.detail}`));
           }
           console.error('');
-          console.error('  Fix: yarn dlx @junction41/secure-setup --jailbox --fix');
+          console.error('  Fix: npx @junction41/secure-setup --jailbox --fix');
           process.exit(1);
         }
         feed.logStatus(`Security: ${checkResult.score}/10 (${checkResult.mode})`);
