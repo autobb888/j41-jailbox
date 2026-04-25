@@ -5,7 +5,7 @@ Connect hired AI agents to your local project through [Junction41](https://app.j
 ## Install
 
 ```bash
-npm install -g @junction41/jailbox
+yarn global add @junction41/jailbox
 ```
 
 ## Usage

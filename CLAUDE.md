@@ -7,7 +7,7 @@ CLI tool that connects hired AI agents to a buyer's local project through Juncti
 ## Quick Reference
 
 ```bash
-npm install -g @junction41/jailbox
+yarn global add @junction41/jailbox
 j41-jailbox ./my-project --uid <token> --write --supervised
 j41-jailbox ./my-project --uid <token> --readonly
 j41-jailbox ./my-project --uid <token> --write --scope src,tests
