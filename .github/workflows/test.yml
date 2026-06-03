@@ -15,10 +15,13 @@ jobs:
         node-version: [18, 20, 22]
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+      # Audit 2026-06-02 L-JAILBOX-supply-1: SHA-pin GitHub Actions. v4 floating
+      # tags can be repointed by their maintainer to a new commit (or by an
+      # attacker via account takeover) — pinning the SHA freezes the bytes we
+      # actually execute. Comments document the corresponding tag so updates
+      # are auditable. Bump by replacing both SHA and comment tag together.
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11   # v4.1.1
+      - uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8   # v4.0.2
         with:
           node-version: ${{ matrix.node-version }}
           cache: yarn

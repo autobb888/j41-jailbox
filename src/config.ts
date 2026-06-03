@@ -8,10 +8,14 @@
 
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync, chmodSync } from 'fs';
 import { join, dirname } from 'path';
+import { homedir } from 'os';
 import chalk from 'chalk';
 import type { SovGuardConfig } from './sovguard.js';
 
-const CONFIG_DIR = join(process.env.HOME || '~', '.j41');
+// Audit 2026-06-02 L-JAILBOX-auth-2: fall back to os.homedir() if HOME is
+// unset (was '~' literal, which creates `~/.j41` in the CWD rather than the
+// user's home — confusing and silently moves config files between runs).
+const CONFIG_DIR = join(process.env.HOME || homedir() || '.', '.j41');
 const CONFIG_FILE = join(CONFIG_DIR, 'config');
 const DEFAULT_SOVGUARD_URL = 'https://api.sovguard.io';
 

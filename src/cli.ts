@@ -264,7 +264,11 @@ export async function run(config: JailboxConfig): Promise<void> {
     if (signalCount >= 2) {
       // Force exit — cleanup is stuck
       console.error(chalk.red('\nForce exiting...'));
-      try { execSync(`docker rm -f $(docker ps -q --filter name=j41-jailbox-)`, { stdio: 'ignore' }); } catch {}
+      // Audit 2026-06-02 L-JAILBOX-ddos-2: scope mass-kill to THIS session's
+// container only, not every j41-jailbox-* on the host. A buyer running
+// two concurrent jailboxes (one per project, allowed) was previously
+// killing the other on Ctrl+C.
+try { if (docker.containerName) execSync(`docker rm -f ${docker.containerName}`, { stdio: 'ignore' }); } catch {}
       process.exit(1);
     }
     feed.logStatus('Shutting down... (Ctrl+C again to force)');
@@ -272,7 +276,11 @@ export async function run(config: JailboxConfig): Promise<void> {
     // Timeout cleanup to prevent hanging on Docker
     const cleanupTimeout = setTimeout(() => {
       console.error(chalk.red('Cleanup timed out — force exiting'));
-      try { execSync(`docker rm -f $(docker ps -q --filter name=j41-jailbox-)`, { stdio: 'ignore' }); } catch {}
+      // Audit 2026-06-02 L-JAILBOX-ddos-2: scope mass-kill to THIS session's
+// container only, not every j41-jailbox-* on the host. A buyer running
+// two concurrent jailboxes (one per project, allowed) was previously
+// killing the other on Ctrl+C.
+try { if (docker.containerName) execSync(`docker rm -f ${docker.containerName}`, { stdio: 'ignore' }); } catch {}
       process.exit(1);
     }, 10_000);
     await cleanup();
@@ -291,7 +299,11 @@ export async function run(config: JailboxConfig): Promise<void> {
   process.on('exit', () => {
     // Last-resort safety net — sync cleanup
     if (docker.isRunning()) {
-      try { execSync(`docker rm -f $(docker ps -q --filter name=j41-jailbox-)`, { stdio: 'ignore' }); } catch {}
+      // Audit 2026-06-02 L-JAILBOX-ddos-2: scope mass-kill to THIS session's
+// container only, not every j41-jailbox-* on the host. A buyer running
+// two concurrent jailboxes (one per project, allowed) was previously
+// killing the other on Ctrl+C.
+try { if (docker.containerName) execSync(`docker rm -f ${docker.containerName}`, { stdio: 'ignore' }); } catch {}
     }
   });
 

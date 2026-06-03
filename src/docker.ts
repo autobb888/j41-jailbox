@@ -105,6 +105,7 @@ export class DockerManager {
   private docker: Docker;
   private container: Docker.Container | null = null;
   private containerStream: any = null;
+  public containerName: string | null = null;
 
   constructor() {
     this.docker = new Docker();
@@ -162,6 +163,7 @@ export class DockerManager {
     }
 
     const containerName = CONTAINER_NAME_PREFIX + Date.now();
+    this.containerName = containerName;
 
     this.container = await this.docker.createContainer({
       Image: useImage,
@@ -200,8 +202,22 @@ export class DockerManager {
         ...(supportsStorageOpt() ? { StorageOpt: { size: '512m' } } : {}),
         OomScoreAdj: 1000,
         CapDrop: ['ALL'],
-        // gVisor runtime (if configured as Docker default)
-        ...(detectGvisorRuntime() ? { Runtime: 'runsc' } : {}),
+        // gVisor runtime. Audit 2026-06-02 L-JAILBOX-ddos-3: if the operator
+        // sets J41_REQUIRE_GVISOR=1, refuse to start the container when runsc
+        // is not available — was previously a silent fall-through to the
+        // default Docker runtime, which undermines the CLAUDE.md claim of
+        // Wall-1 isolation.
+        ...((): { Runtime?: string } => {
+          const rt = detectGvisorRuntime();
+          if (rt) return { Runtime: rt };
+          if (process.env.J41_REQUIRE_GVISOR === '1') {
+            throw new Error(
+              'J41_REQUIRE_GVISOR=1 but the `runsc` runtime is not registered with Docker. ' +
+              'Install gVisor via `npx @junction41/secure-setup --jailbox` or unset J41_REQUIRE_GVISOR to fall back to default Docker.',
+            );
+          }
+          return {};
+        })(),
         // NEVER override CapDrop — bwrap runs inside the container's own user namespace
       },
       Env: [
