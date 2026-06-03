@@ -13,7 +13,13 @@ import { join, resolve, relative, dirname } from 'path';
 import { createHash } from 'crypto';
 import { createInterface } from 'readline';
 
-const JAILBOX_ROOT = '/jailbox';
+// JAILBOX_ROOT is the in-container mount point. The env override exists ONLY so
+// unit tests can exercise the path logic on the host with a tmpdir as root;
+// production always runs in-container where /jailbox exists.
+function getJailboxRoot(): string {
+  return process.env.JAILBOX_ROOT || '/jailbox';
+}
+const JAILBOX_ROOT = getJailboxRoot();
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_DIR_ENTRIES = 10_000;
 
@@ -256,20 +262,22 @@ function writeFile(relPath: string, content: string) {
 // ── Helpers ─────────────────────────────────────────────────────
 
 function resolveSafe(relPath: string): string | null {
-  // Reject paths with .. before resolution
+  // Reject paths with .. before resolution (strict, blunt defense-in-depth;
+  // the realpath walk below is the deeper guard).
   if (relPath.includes('..')) return null;
 
-  const absPath = resolve(JAILBOX_ROOT, relPath);
+  const root = getJailboxRoot();
+  const absPath = resolve(root, relPath);
   // Must be within jailbox root (pre-resolution check)
-  if (!absPath.startsWith(JAILBOX_ROOT + '/') && absPath !== JAILBOX_ROOT) {
+  if (!absPath.startsWith(root + '/') && absPath !== root) {
     return null;
   }
 
-  // Symlink resolution: follow symlinks and verify the REAL path stays in /jailbox/
+  // Symlink resolution: follow symlinks and verify the REAL path stays in root/
   if (existsSync(absPath)) {
     try {
       const realPath = realpathSync(absPath);
-      if (!realPath.startsWith(JAILBOX_ROOT + '/') && realPath !== JAILBOX_ROOT) {
+      if (!realPath.startsWith(root + '/') && realPath !== root) {
         return null; // Symlink escapes jailbox
       }
       return realPath;
@@ -279,13 +287,13 @@ function resolveSafe(relPath: string): string | null {
   }
 
   // Path doesn't exist yet (write_file creates it) — walk up ancestor chain
-  // to find the nearest existing directory and verify its realpath is inside jailbox
+  // to find the nearest existing directory and verify its realpath is inside root
   let ancestor = resolve(absPath, '..');
   while (ancestor !== resolve(ancestor, '..')) { // stop at filesystem root
     if (existsSync(ancestor)) {
       try {
         const realAncestor = realpathSync(ancestor);
-        if (!realAncestor.startsWith(JAILBOX_ROOT + '/') && realAncestor !== JAILBOX_ROOT) {
+        if (!realAncestor.startsWith(root + '/') && realAncestor !== root) {
           return null; // Ancestor symlink escapes jailbox
         }
       } catch {

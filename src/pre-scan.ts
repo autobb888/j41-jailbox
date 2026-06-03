@@ -123,7 +123,13 @@ export async function preScan(projectDir: string, sovguard?: SovGuardConfig): Pr
   return { exclusions, directoryHash, confirmed: answer === 'y' };
 }
 
-function walkDir(
+/**
+ * Recursively walk the project, populating `files` with includable paths and
+ * `exclusions` with auto-excluded entries (sensitive names, escape symlinks).
+ * Exported for test access — the public preScan() flow wraps this with the
+ * confirmation prompt.
+ */
+export function walkDir(
   rootDir: string,
   currentDir: string,
   files: string[],

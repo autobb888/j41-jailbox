@@ -1,16 +1,27 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { mkdirSync, writeFileSync, rmSync, symlinkSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-// We need to test with a custom jailbox root
-// Since mcp-server uses a hardcoded JAILBOX_ROOT = '/jailbox',
-// we'll test resolveSafe logic directly and file ops via the exported functions
+// Use a tmpdir as JAILBOX_ROOT so the resolveSafe ancestor-walk has somewhere
+// real to anchor on the host. Production runs in a container where /jailbox
+// always exists; this test override is the host-side equivalent.
+const TEST_ROOT = join(tmpdir(), `j41-mcp-test-${Date.now()}`);
+process.env.JAILBOX_ROOT = TEST_ROOT;
+
+beforeAll(() => {
+  rmSync(TEST_ROOT, { recursive: true, force: true });
+  mkdirSync(join(TEST_ROOT, 'src'), { recursive: true });
+  writeFileSync(join(TEST_ROOT, 'src', 'main.rs'), 'fn main() {}');
+  writeFileSync(join(TEST_ROOT, 'hello.txt'), 'hello');
+});
+
+afterAll(() => {
+  rmSync(TEST_ROOT, { recursive: true, force: true });
+});
 
 describe('mcp-server', () => {
-  // For resolveSafe tests, we test the logic pattern directly
   describe('resolveSafe', () => {
-    // Import after mock setup
     let resolveSafe: (relPath: string) => string | null;
 
     beforeEach(async () => {
@@ -18,30 +29,43 @@ describe('mcp-server', () => {
       resolveSafe = mod.resolveSafe;
     });
 
-    it('rejects paths containing ..', () => {
+    it('rejects ".." as a leading path segment', () => {
       expect(resolveSafe('../etc/passwd')).toBeNull();
     });
 
-    it('rejects paths with embedded ..', () => {
+    it('rejects ".." in the middle of a path', () => {
       expect(resolveSafe('foo/../../etc/passwd')).toBeNull();
     });
 
-    it('resolves valid relative paths under /jailbox', () => {
-      const result = resolveSafe('src/main.rs');
-      expect(result).toBe('/jailbox/src/main.rs');
+    it('rejects ".." with backslashes (Windows-style)', () => {
+      expect(resolveSafe('..\\etc\\passwd')).toBeNull();
+    });
+
+    it('rejects any path containing ".." (strict defense-in-depth)', () => {
+      // Origin keeps the blunt `includes("..")` check: even non-traversal names
+      // like `..foo` are rejected. The realpath walk is the deeper guard.
+      expect(resolveSafe('..foo')).toBeNull();
+      expect(resolveSafe('foo..bar')).toBeNull();
+    });
+
+    it('resolves valid relative paths under root', () => {
+      expect(resolveSafe('src/main.rs')).toBe(join(TEST_ROOT, 'src/main.rs'));
     });
 
     it('resolves root path .', () => {
-      const result = resolveSafe('.');
-      expect(result).toBe('/jailbox');
+      expect(resolveSafe('.')).toBe(TEST_ROOT);
     });
 
     it('rejects absolute paths outside jailbox', () => {
-      // Absolute paths get resolved relative to jailbox, so /etc becomes /jailbox/etc
-      // This is actually safe — resolveSafe uses resolve() which joins them
-      const result = resolveSafe('/etc/passwd');
-      // path.resolve('/jailbox', '/etc/passwd') = '/etc/passwd' which is outside /jailbox
-      expect(result).toBeNull();
+      expect(resolveSafe('/etc/passwd')).toBeNull();
+    });
+
+    it('rejects paths whose realpath escapes via symlink', () => {
+      const linkPath = join(TEST_ROOT, 'escape');
+      try { rmSync(linkPath, { force: true }); } catch {}
+      symlinkSync('/etc/passwd', linkPath);
+      expect(resolveSafe('escape')).toBeNull();
+      rmSync(linkPath, { force: true });
     });
   });
 
@@ -54,13 +78,12 @@ describe('mcp-server', () => {
     });
 
     it('detects binary content (null bytes)', () => {
-      const buf = Buffer.from([0x48, 0x65, 0x00, 0x6c, 0x6f]); // "He\0lo"
+      const buf = Buffer.from([0x48, 0x65, 0x00, 0x6c, 0x6f]);
       expect(isBinary(buf)).toBe(true);
     });
 
     it('passes text content', () => {
-      const buf = Buffer.from('Hello, world!\nLine 2\n', 'utf-8');
-      expect(isBinary(buf)).toBe(false);
+      expect(isBinary(Buffer.from('Hello, world!\nLine 2\n', 'utf-8'))).toBe(false);
     });
 
     it('passes empty buffer', () => {
@@ -68,32 +91,18 @@ describe('mcp-server', () => {
     });
 
     it('only checks first 8KB', () => {
-      // Create buffer with null byte after 8KB
-      const buf = Buffer.alloc(9000, 0x41); // All 'A'
-      buf[8193] = 0; // Null byte after 8KB check range
+      const buf = Buffer.alloc(9000, 0x41);
+      buf[8193] = 0;
       expect(isBinary(buf)).toBe(false);
     });
   });
 
   describe('listDirectory', () => {
     let listDirectory: (relPath: string) => any;
-    let tempDir: string;
 
     beforeEach(async () => {
-      // Create temp jailbox
-      tempDir = join(tmpdir(), `j41-test-${Date.now()}`);
-      mkdirSync(join(tempDir, 'subdir'), { recursive: true });
-      writeFileSync(join(tempDir, 'file.txt'), 'hello');
-      writeFileSync(join(tempDir, 'subdir', 'nested.txt'), 'nested');
-
-      // Note: listDirectory uses the hardcoded JAILBOX_ROOT = '/jailbox'
-      // We can't easily override it, so we test return shape and error handling
       const mod = await import('../src/mcp-server.js');
       listDirectory = mod.listDirectory;
-    });
-
-    afterEach(() => {
-      if (existsSync(tempDir)) rmSync(tempDir, { recursive: true });
     });
 
     it('returns error for non-existent directory', () => {
@@ -105,6 +114,15 @@ describe('mcp-server', () => {
       const result = listDirectory('../etc');
       expect(result.isError).toBe(true);
     });
+
+    it('lists root directory entries', () => {
+      const result = listDirectory('.');
+      expect(result.isError).toBeUndefined();
+      const entries = JSON.parse(result.content[0].text);
+      const names = entries.map((e: any) => e.name);
+      expect(names).toContain('hello.txt');
+      expect(names).toContain('src');
+    });
   });
 
   describe('readFile', () => {
@@ -113,6 +131,12 @@ describe('mcp-server', () => {
     beforeEach(async () => {
       const mod = await import('../src/mcp-server.js');
       readFile = mod.readFile;
+    });
+
+    it('reads file content', () => {
+      const result = readFile('hello.txt');
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0].text).toBe('hello');
     });
 
     it('returns error for non-existent file', () => {
@@ -134,6 +158,14 @@ describe('mcp-server', () => {
     beforeEach(async () => {
       const mod = await import('../src/mcp-server.js');
       writeFile = mod.writeFile;
+      // Defense-in-depth env is checked inside writeFile; ensure it's not blocking
+      process.env.JAILBOX_WRITABLE = 'true';
+    });
+
+    it('writes a new file', () => {
+      const result = writeFile('written.txt', 'hi');
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0].text).toContain('Written');
     });
 
     it('returns error for path traversal', () => {
@@ -143,10 +175,18 @@ describe('mcp-server', () => {
     });
 
     it('returns error for oversized content', () => {
-      const bigContent = 'x'.repeat(11 * 1024 * 1024); // > 10MB
+      const bigContent = 'x'.repeat(11 * 1024 * 1024);
       const result = writeFile('big.txt', bigContent);
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('too large');
+    });
+
+    it('honors JAILBOX_WRITABLE=false defense-in-depth', () => {
+      process.env.JAILBOX_WRITABLE = 'false';
+      const result = writeFile('should-not-write.txt', 'x');
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('disabled');
+      process.env.JAILBOX_WRITABLE = 'true';
     });
   });
 });

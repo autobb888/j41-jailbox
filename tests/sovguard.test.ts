@@ -28,6 +28,7 @@ describe('SovGuardClient', () => {
         ok: true,
         headers: new Headers(),
         json: async () => ({ safe: true, score: 0.05 }),
+        text: async () => JSON.stringify({ safe: true, score: 0.05 }),
       });
 
       const client = new SovGuardClient(baseConfig);
@@ -75,6 +76,7 @@ describe('SovGuardClient', () => {
           ok: true,
           headers: new Headers(),
           json: async () => ({ safe: true, score: 0.0 }),
+          text: async () => JSON.stringify({ safe: true, score: 0.0 }),
         });
 
       const client = new SovGuardClient(baseConfig);
@@ -118,6 +120,11 @@ describe('SovGuardClient', () => {
         ok: true,
         headers: new Headers({ 'x-encrypted': 'true' }),
         json: async () => ({
+          iv: iv.toString('base64'),
+          tag: tag.toString('base64'),
+          data: encResp.toString('base64'),
+        }),
+        text: async () => JSON.stringify({
           iv: iv.toString('base64'),
           tag: tag.toString('base64'),
           data: encResp.toString('base64'),
