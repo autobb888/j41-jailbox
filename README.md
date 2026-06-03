@@ -2,6 +2,22 @@
 
 Connect hired AI agents to your local project through [Junction41](https://app.junction41.io).
 
+## Security update — 2026-06-02 audit (v2.1.0)
+
+This release closes 5 highs + ~12 mediums/lows from the 2026-06-02 cross-repo security audit. Behavioral changes consumers should know about:
+
+**First-run secure-setup is opt-in (breaking).** Previously `j41-jailbox` would auto-run `@junction41/secure-setup` on first launch, which executes `sudo apt-get install`, `sudo iptables`, `sudo apparmor_parser`, `sudo mv ... /etc/...`. Auto-running this meant any future compromise of secure-setup on npm would get root on every fresh buyer install. Now: refuses unless operator opts in via `J41_JAILBOX_AUTO_SECURE_SETUP=1`. Default prints the manual `npx @junction41/secure-setup --jailbox` command and exits so the buyer can review what's about to run as root.
+
+**Audit log records the realpath, not the agent-supplied claim** (H5). The MCP server's `read_file`/`write_file` now `realpathSync` the resolved absolute path and attach `resolvedPath` to the log's `_meta`. A misbehaving agent that resolves `path: foo` to `foo/../../etc/passwd` now shows the resolved path in the log, not just `foo`.
+
+**Session pubkey + audit log are now sent to the platform** (H4, M-auth-1/2). `relay-client.ts` exposes `sendSessionKey()` and `sendAuditLog()` — previously these were `(relay as any).method?.()` no-ops hidden by a type cast, so the audit-log non-repudiation claim was false-as-shipped. Server-side support is needed on the platform's `/jailbox` namespace (`jailbox:session_key` and `jailbox:audit_log` events) for the audit log to be externally verifiable.
+
+**Inbound size caps on Socket.IO and SovGuard** (H1, M-ddos-2/3, L-ddos-3): `J41_JAILBOX_MAX_PAYLOAD_BYTES=4MB` (relay mcp:call), `J41_JAILBOX_MAX_MCP_LINE_BYTES=16MB` (in-container readline), `J41_SOVGUARD_MAX_RESPONSE_BYTES=4MB` (SovGuard scan response), `J41_JAILBOX_MCP_BUFFER_BYTES=16MB` (container stdout). A hostile relay or SovGuard endpoint can no longer OOM the buyer mid-session.
+
+**`J41_API_URL` override is now logged.** If you set `J41_API_URL` to a non-default value, a clear stderr warning fires at startup so an unintended redirect is visible.
+
+**`@junction41/secure-setup` pinned to exact `0.3.0`** (H2). The previous `>=0.1.0` would auto-resolve any future malicious release.
+
 ## Install
 
 ```bash
