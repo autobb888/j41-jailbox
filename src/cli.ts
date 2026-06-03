@@ -290,11 +290,30 @@ export async function run(config: JailboxConfig): Promise<void> {
 
   try {
     // ── Task 20: First-run security setup ─────────────────────
+    // Audit 2026-06-02 H-JAILBOX-3: secure-setup runs `sudo apt-get install`,
+    // `sudo iptables`, `sudo apparmor_parser`, `sudo mv ... /etc/...`. Running
+    // this AUTOMATICALLY on first jailbox launch was the H finding: any
+    // future compromise of secure-setup on npm would silently get root on
+    // every fresh buyer install. Now require explicit consent via
+    // J41_JAILBOX_AUTO_SECURE_SETUP=1 OR `--auto-setup` flag (set in the
+    // commander program above). Default behavior is to PRINT the manual
+    // command and exit — operator runs `npx @junction41/secure-setup
+    // --jailbox` themselves with full awareness of what's about to happen.
     const initMarker = join(homedir(), '.j41', 'jailbox-security-initialized');
     if (!existsSync(initMarker)) {
       console.log('');
       console.log(chalk.cyan('  J41 Jailbox Security Setup (first run)'));
       console.log('');
+      const autoSetup = process.env.J41_JAILBOX_AUTO_SECURE_SETUP === '1';
+      if (!autoSetup) {
+        console.error(chalk.yellow(
+          '  secure-setup will perform sudo apt-get install, sudo iptables, sudo apparmor_parser, ' +
+          'sudo mv into /etc/, etc. It is NOT auto-run by default per audit 2026-06-02 H-JAILBOX-3.',
+        ));
+        console.error('  Run manually:  npx @junction41/secure-setup --jailbox');
+        console.error('  Or opt in to auto-run:  J41_JAILBOX_AUTO_SECURE_SETUP=1 j41-jailbox ...');
+        process.exit(1);
+      }
       const secureSetupFirst = await loadSecureSetup();
       if (secureSetupFirst) {
         try {

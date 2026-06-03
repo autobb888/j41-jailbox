@@ -23,6 +23,9 @@ export class RelayClient {
   connect(apiUrl: string, auth: { type: string; uid?: string; reconnectToken?: string }): Promise<void> {
     return new Promise((resolve, reject) => {
       // Connect to /jailbox namespace (append to URL, path is HTTP transport path)
+      // Audit 2026-06-02 H-JAILBOX-1: bound the inbound payload size. Without
+      // maxPayload, a hostile relay can deliver multi-GB events on mcp:call
+      // and OOM the buyer's machine mid-session.
       this.socket = io(apiUrl + '/jailbox', {
         path: '/ws',
         auth,
@@ -30,6 +33,7 @@ export class RelayClient {
         reconnection: true,
         reconnectionAttempts: 5,
         reconnectionDelay: 2000,
+        ...({ maxPayload: Number(process.env.J41_JAILBOX_MAX_PAYLOAD_BYTES ?? 4 * 1024 * 1024) } as any),
       });
 
       this.socket.on('connect', () => {
@@ -110,6 +114,29 @@ export class RelayClient {
   sendResume(): void { this.socket?.emit('jailbox:resume'); }
   sendAbort(): void { this.socket?.emit('jailbox:abort'); }
   sendAccept(): void { this.socket?.emit('jailbox:accept'); }
+
+  /**
+   * Audit 2026-06-02 H-JAILBOX-4 + M-JAILBOX-auth-1/2: register the
+   * session's ephemeral Ed25519 pubkey with the platform at connect time
+   * (so audit-log signatures can be verified by anyone reviewing the log
+   * later), and forward the signed audit log to the platform at session
+   * end. Both used to be `(relay as any).method?.()` no-ops with a type
+   * cast hiding the missing implementation; the audit log claim of
+   * non-repudiation was therefore false-as-shipped.
+   *
+   * Server-side support: the /jailbox namespace must accept the
+   * `jailbox:session_key` event (key: PEM SPKI, sessionId from socket auth)
+   * and the `jailbox:audit_log` event (full exported log). Until the
+   * platform side ships those events, these are best-effort — the buyer
+   * sees a warning on disconnect that audit-log integrity is local-only.
+   */
+  sendSessionKey(publicKeyPem: string): void {
+    this.socket?.emit('jailbox:session_key', { publicKey: publicKeyPem });
+  }
+
+  sendAuditLog(exported: { publicKey: string; entries: unknown[] }): void {
+    this.socket?.emit('jailbox:audit_log', exported);
+  }
 
   onMcpCallReceived(handler: (call: McpCall) => void): void { this.onMcpCall = handler; }
   onStatusChange(handler: (status: string, data?: any) => void): void { this.onStatusChanged = handler; }

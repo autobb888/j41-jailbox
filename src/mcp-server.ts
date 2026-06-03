@@ -184,9 +184,24 @@ function readFile(relPath: string) {
   const text = buffer.toString('utf-8');
   const hash = createHash('sha256').update(buffer).digest('hex');
 
+  // Audit 2026-06-02 H-JAILBOX-5: record the realpath-resolved file actually
+  // accessed, not the agent-supplied claim. Without this the audit log can
+  // show `path: /workspace/foo` while the actual access was
+  // `/workspace/foo/../../etc/passwd`. `absPath` was already realpath-checked
+  // upstream by resolveSafe; expose it so the caller can log it instead of
+  // `relPath`.
+  let resolvedPath = relPath;
+  try {
+    resolvedPath = realpathSync(absPath);
+  } catch {
+    // realpath may fail if symlink is broken between resolveSafe and here;
+    // keep relPath but mark unresolved.
+    resolvedPath = `${relPath} [unresolved]`;
+  }
+
   return {
     content: [{ type: 'text', text }],
-    _meta: { sizeBytes: stat.size, contentHash: `sha256:${hash}`, path: relPath },
+    _meta: { sizeBytes: stat.size, contentHash: `sha256:${hash}`, path: relPath, resolvedPath },
   };
 }
 
