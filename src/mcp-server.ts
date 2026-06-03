@@ -19,6 +19,23 @@ const MAX_DIR_ENTRIES = 10_000;
 
 // ── JSON-RPC Protocol ───────────────────────────────────────────
 
+// Audit 2026-06-02 M-JAILBOX-ddos-2: bound the readline buffer so a
+// malicious caller can't OOM us by sending a multi-GB line with no newline.
+// readline doesn't expose maxLineLength directly; we wrap the input with a
+// passthrough that aborts on oversize.
+const MAX_MCP_LINE_BYTES = Number(process.env.J41_JAILBOX_MAX_MCP_LINE_BYTES ?? 16 * 1024 * 1024);
+let _stdinAccum = 0;
+process.stdin.on('data', (chunk: Buffer) => {
+  _stdinAccum += chunk.byteLength;
+  // Reset when we see a newline — accumulator tracks "since last newline".
+  const nlIdx = chunk.lastIndexOf(0x0a);
+  if (nlIdx >= 0) _stdinAccum = chunk.byteLength - (nlIdx + 1);
+  if (_stdinAccum > MAX_MCP_LINE_BYTES) {
+    process.stderr.write(`[jailbox-mcp] inbound line exceeded ${MAX_MCP_LINE_BYTES} bytes; aborting\n`);
+    process.exit(1);
+  }
+});
+
 const rl = createInterface({ input: process.stdin });
 
 rl.on('line', (line) => {

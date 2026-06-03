@@ -23,7 +23,14 @@ import { AuditLog } from './audit-log.js';
 
 import { createInterface } from 'readline';
 
+// Audit 2026-06-02 M-JAILBOX-bridge-1 / L-JAILBOX-auth-1: J41_API_URL env
+// silently redirects the entire session to a different relay. Log loudly when
+// it's set so the operator can verify they intended it.
 const J41_API_URL = process.env.J41_API_URL || 'https://api.junction41.io';
+if (process.env.J41_API_URL && process.env.J41_API_URL !== 'https://api.junction41.io') {
+  console.error(`[j41-jailbox] WARN: J41_API_URL override active → ${process.env.J41_API_URL}`);
+  console.error('[j41-jailbox]        If this was unintended, unset the env var and re-run.');
+}
 
 async function loadSecureSetup(): Promise<any> {
   try {
@@ -433,9 +440,20 @@ export async function run(config: JailboxConfig): Promise<void> {
     let mcpBuffer = '';
     const pendingMcpRequests = new Map<number, (result: any) => void>();
     let mcpRequestId = 0;
+    // Audit 2026-06-02 L-JAILBOX-ddos-3: cap the per-chunk stdout buffer so
+    // a misbehaving container that writes a 100 GB line without ever sending
+    // a newline cannot OOM the buyer's machine. 16 MB is loose; tighten via
+    // J41_JAILBOX_MCP_BUFFER_BYTES.
+    const MAX_MCP_BUFFER_BYTES = Number(process.env.J41_JAILBOX_MCP_BUFFER_BYTES ?? 16 * 1024 * 1024);
 
     dockerStdout.on('data', (chunk: Buffer) => {
       mcpBuffer += chunk.toString();
+      if (mcpBuffer.length > MAX_MCP_BUFFER_BYTES) {
+        console.error(`[j41-jailbox] MCP stdout buffer exceeded ${MAX_MCP_BUFFER_BYTES} bytes — dropping pending data and aborting`);
+        mcpBuffer = '';
+        cleanup().then(() => process.exit(1));
+        return;
+      }
       const lines = mcpBuffer.split('\n');
       mcpBuffer = lines.pop() || '';
       for (const line of lines) {

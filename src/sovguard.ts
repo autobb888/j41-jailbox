@@ -183,13 +183,28 @@ export class SovGuardClient {
 
       this._consecutiveFailures = 0;
 
+      // Audit 2026-06-02 M-JAILBOX-ddos-3: cap SovGuard response body size
+      // before parsing. A hostile API can otherwise serve multi-GB JSON and
+      // OOM the buyer's CLI mid-session.
+      const MAX_SOVGUARD_RESPONSE_BYTES = Number(process.env.J41_SOVGUARD_MAX_RESPONSE_BYTES ?? 4 * 1024 * 1024);
+      const declared = Number(response.headers.get('content-length'));
+      if (Number.isFinite(declared) && declared > MAX_SOVGUARD_RESPONSE_BYTES) {
+        this._consecutiveFailures++;
+        return null;
+      }
+      const rawText = await response.text();
+      if (rawText.length > MAX_SOVGUARD_RESPONSE_BYTES) {
+        this._consecutiveFailures++;
+        return null;
+      }
+
       if (this._encryptionKey && response.headers.get('x-encrypted') === 'true') {
-        const envelope = await response.json() as { iv: string; tag: string; data: string };
+        const envelope = JSON.parse(rawText) as { iv: string; tag: string; data: string };
         const decrypted = this.decryptPayload(envelope);
         return JSON.parse(decrypted) as SovGuardScanResult;
       }
 
-      return await response.json() as SovGuardScanResult;
+      return JSON.parse(rawText) as SovGuardScanResult;
     } catch (err) {
       if (err instanceof SovGuardAuthError) throw err;
       this._consecutiveFailures++;
