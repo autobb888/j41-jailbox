@@ -38,6 +38,10 @@ export interface JailboxConfig {
   sessionLimits?: Partial<SessionLimits>;
   _cliSovguardKey?: string;
   _cliSovguardUrl?: string;
+  /** Abort startup if any expected isolation layer (gVisor/AppArmor/seccomp/bwrap) is missing. */
+  strict?: boolean;
+  /** Buyer explicitly disabled SovGuard scanning. Must be explicit (vs. silently skipped) for a write session to start. */
+  noSovguard?: boolean;
 }
 
 export interface ExclusionEntry {

@@ -11,8 +11,9 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import { Writable, Readable, PassThrough } from 'stream';
 import { existsSync, readFileSync } from 'fs';
-import { homedir } from 'os';
+import { homedir, userInfo } from 'os';
 import { execSync } from 'child_process';
+import { randomBytes } from 'crypto';
 import chalk from 'chalk';
 
 const require = createRequire(import.meta.url);
@@ -61,6 +62,54 @@ function detectGvisorRuntime(): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+export interface IsolationLayers {
+  gvisor: boolean;
+  apparmor: boolean;
+  seccomp: boolean;
+  bwrap: boolean;
+  active: number;
+  missing: string[];
+}
+
+/**
+ * Inspect the host for the four isolation layers jailbox can stack on top of
+ * the always-on Docker hardening (cap-drop, no-network, read-only rootfs).
+ * Surfaces how much defense-in-depth is actually active so the buyer isn't
+ * given a false sense of the full "three-wall" sandbox on a stock host.
+ */
+export function detectIsolationLayers(): IsolationLayers {
+  const linux = process.platform === 'linux';
+  const seccompPath = linux
+    ? '/etc/j41/seccomp-jailbox.json'
+    : join(homedir(), '.j41', 'seccomp-jailbox.json');
+
+  const gvisor = !!detectGvisorRuntime();
+  const seccomp = existsSync(seccompPath);
+
+  let apparmor = false;
+  if (linux) {
+    try {
+      const profiles = readFileSync('/sys/kernel/security/apparmor/profiles', 'utf8');
+      apparmor = profiles.includes('j41-jailbox-profile');
+    } catch { /* AppArmor not available */ }
+  }
+
+  let bwrap = false;
+  try {
+    execSync('which bwrap', { stdio: 'ignore', timeout: 3000 });
+    bwrap = true;
+  } catch { /* bwrap not installed */ }
+
+  const present = { gvisor, apparmor, seccomp, bwrap };
+  const missing: string[] = [];
+  if (!gvisor) missing.push('gVisor (kernel isolation)');
+  if (!apparmor) missing.push('AppArmor profile (j41-jailbox-profile)');
+  if (!seccomp) missing.push('custom seccomp profile (/etc/j41/seccomp-jailbox.json)');
+  if (!bwrap) missing.push('bubblewrap (bwrap)');
+
+  return { ...present, active: Object.values(present).filter(Boolean).length, missing };
 }
 
 let _storageOptSupported: boolean | null = null;
@@ -118,56 +167,58 @@ export class DockerManager {
     stdin: Writable;
     stdout: Readable;
   }> {
-    // Pull image if needed — prefer pinned digest for integrity
-    let useImage = MCP_IMAGE;
+    // Pull image — pinned digest ONLY. We deliberately do not fall back to the
+    // mutable `node:18-alpine` tag: a repointed tag must never be able to
+    // substitute a different image for our pinned, verified one.
+    const useImage = MCP_IMAGE_DIGEST;
     try {
-      // Check if pinned digest is available locally
       await this.docker.getImage(MCP_IMAGE_DIGEST).inspect();
-      useImage = MCP_IMAGE_DIGEST;
     } catch {
-      // Try the tag
+      // Not present locally by digest. Accept a local tag only if it resolves
+      // to our pinned digest; otherwise pull by digest, and if even that fails
+      // refuse to start rather than silently using the mutable tag.
+      let pinnedPresent = false;
       try {
         const info = await this.docker.getImage(MCP_IMAGE).inspect();
-        // Verify the tag resolves to our pinned digest
         const digests: string[] = info.RepoDigests || [];
-        if (digests.some((d: string) => d === MCP_IMAGE_DIGEST)) {
-          useImage = MCP_IMAGE;
-        } else {
-          console.warn(chalk.yellow(`⚠ Local ${MCP_IMAGE} digest does not match pinned digest. Re-pulling...`));
-          throw new Error('digest mismatch');
-        }
-      } catch {
+        pinnedPresent = digests.some((d: string) => d === MCP_IMAGE_DIGEST);
+      } catch { /* tag not local either */ }
+
+      if (!pinnedPresent) {
         console.log(chalk.gray(`Pulling ${MCP_IMAGE_DIGEST}...`));
-        await new Promise<void>((resolve, reject) => {
+        await new Promise<void>((res, rej) => {
           this.docker.pull(MCP_IMAGE_DIGEST, (err: any, stream: any) => {
             if (err) {
-              // Fallback to tag if digest pull fails (e.g., older Docker versions)
-              console.log(chalk.gray(`Digest pull failed, falling back to ${MCP_IMAGE}...`));
-              this.docker.pull(MCP_IMAGE, (err2: any, stream2: any) => {
-                if (err2) return reject(err2);
-                this.docker.modem.followProgress(stream2, (err3: any) => {
-                  if (err3) reject(err3);
-                  else resolve();
-                });
-              });
-              return;
+              return rej(new Error(
+                `Failed to pull pinned MCP image (${MCP_IMAGE_DIGEST}): ${err.message}. ` +
+                `Refusing to fall back to the mutable ${MCP_IMAGE} tag for supply-chain safety.`,
+              ));
             }
-            this.docker.modem.followProgress(stream, (err2: any) => {
-              if (err2) reject(err2);
-              else resolve();
-            });
+            this.docker.modem.followProgress(stream, (err2: any) => err2 ? rej(err2) : res());
           });
         });
-        useImage = MCP_IMAGE_DIGEST;
       }
     }
 
-    const containerName = CONTAINER_NAME_PREFIX + Date.now();
+    // Random suffix avoids predictable container names across concurrent
+    // sessions; the scoped cleanup still targets this.containerName exactly.
+    const containerName = CONTAINER_NAME_PREFIX + Date.now() + '-' + randomBytes(6).toString('hex');
     this.containerName = containerName;
+
+    // On native Linux, run as the host user so files written to the bind-mounted
+    // project are owned by the buyer, not root (avoids root-owned writes on the
+    // host). Skipped off-Linux where Docker Desktop already maps mount ownership
+    // and forcing a UID can break writes to the share.
+    const hostUser = userInfo();
+    const userSpec = (process.platform === 'linux'
+      && typeof hostUser.uid === 'number' && hostUser.uid >= 0 && hostUser.uid < 65536)
+      ? `${hostUser.uid}:${hostUser.gid}`
+      : undefined;
 
     this.container = await this.docker.createContainer({
       Image: useImage,
       name: containerName,
+      ...(userSpec ? { User: userSpec } : {}),
       Cmd: ['node', '/app/mcp-server.js'],
       WorkingDir: JAILBOX_MOUNT,
       OpenStdin: true,

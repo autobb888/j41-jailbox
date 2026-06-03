@@ -11,7 +11,7 @@ import chalk from 'chalk';
 import type { JailboxConfig, JailboxMode, McpCall, McpResult, ExclusionEntry, OperationMetadata } from './types.js';
 import { MAX_SESSION_TRANSFER } from './types.js';
 import { preScan, isExcluded } from './pre-scan.js';
-import { DockerManager, getMcpServerPath } from './docker.js';
+import { DockerManager, getMcpServerPath, detectIsolationLayers } from './docker.js';
 import { RelayClient } from './relay-client.js';
 import { Supervisor } from './supervisor.js';
 import { Feed } from './feed.js';
@@ -63,6 +63,8 @@ export function parseArgs(argv: string[]): JailboxConfig {
     .option('--max-reads <n>', 'Max file reads per session', parseInt)
     .option('--max-writes <n>', 'Max file writes per session', parseInt)
     .option('--max-duration <hours>', 'Max session duration in hours', parseFloat)
+    .option('--strict', 'Abort if any expected isolation layer (gVisor/AppArmor/seccomp/bwrap) is missing')
+    .option('--no-sovguard', 'Disable SovGuard content scanning (must be explicit — writes are otherwise blocked)')
     .parse(argv);
 
   const opts = program.opts();
@@ -125,6 +127,8 @@ export function parseArgs(argv: string[]): JailboxConfig {
     },
     _cliSovguardKey: opts.sovguardKey,
     _cliSovguardUrl: opts.sovguardUrl,
+    strict: !!opts.strict,
+    noSovguard: opts.sovguard === false, // commander sets `sovguard: false` for --no-sovguard
   };
 }
 
@@ -373,6 +377,26 @@ try { if (docker.containerName) execSync(`docker rm -f ${docker.containerName}`,
     // ── 1. Git check ───────────────────────────────────────────
     checkGitStatus(config.projectDir);
 
+    // ── 1a. Isolation layer banner ────────────────────────────
+    // The README describes a multi-wall sandbox; surface what is ACTUALLY
+    // active so the buyer doesn't assume gVisor/AppArmor/seccomp/bwrap are
+    // present on a stock Docker host. Docker hardening below is always applied.
+    const layers = detectIsolationLayers();
+    if (layers.missing.length > 0) {
+      console.log('');
+      console.log(chalk.yellow(`⚠ Sandbox isolation: ${layers.active}/4 layers active.`));
+      for (const m of layers.missing) console.log(chalk.yellow(`    missing: ${m}`));
+      console.log(chalk.yellow('  Docker hardening (cap-drop, no-network, read-only rootfs) is still applied.'));
+      console.log(chalk.yellow('  Install the rest via: npx @junction41/secure-setup --jailbox'));
+      console.log('');
+      if (config.strict) {
+        console.error(chalk.red('--strict: refusing to start with missing isolation layers.'));
+        process.exit(1);
+      }
+    } else {
+      feed.logStatus('Sandbox isolation: 4/4 layers active');
+    }
+
     // ── 1b. SovGuard credentials ─────────────────────────────
     // Resolve through priority chain: CLI flags > env vars > config file > prompt
     const resolved = resolveCredentials({
@@ -387,10 +411,12 @@ try { if (docker.containerName) execSync(`docker rm -f ${docker.containerName}`,
 
     if (resolved.config) {
       config.sovguard = resolved.config;
-    } else if (resolved.needsPrompt) {
-      // Interactive first-run prompt
+    } else if (resolved.needsPrompt && !config.noSovguard) {
+      // Interactive first-run prompt — pressing Enter skips, but writes will be
+      // blocked unless the session is re-run with --no-sovguard.
       console.log('');
       console.log(chalk.cyan('No SovGuard configuration found.'));
+      console.log(chalk.gray('Without SovGuard, agent writes are blocked. Pass --no-sovguard to override.'));
       const apiKey = (await readSecret('SovGuard API key (or press Enter to skip): ')).trim();
 
       if (apiKey) {
@@ -420,7 +446,26 @@ try { if (docker.containerName) execSync(`docker rm -f ${docker.containerName}`,
       if (flushResult.sent > 0) {
         feed.logStatus(`Sent ${flushResult.sent} queued SovGuard report(s)`);
       }
+    } else if (config.noSovguard) {
+      // Buyer made an explicit, informed choice to disable scanning.
+      console.log('');
+      console.log(chalk.red('⚠ SovGuard scanning DISABLED via --no-sovguard.'));
+      console.log(chalk.red('  Agent writes will NOT be scanned for malicious content.'));
+      console.log('');
+    } else if (config.permissions.write) {
+      // Writes are enabled but SovGuard is not configured and the buyer did not
+      // explicitly opt out — refuse to start. Closes the silent-skip loophole
+      // where a write session could otherwise run with no content scanning.
+      console.error('');
+      console.error(chalk.red('✗ Refusing to start: writes are enabled but SovGuard is not configured.'));
+      console.error(chalk.red('  Choose one:'));
+      console.error(chalk.red('    1. Configure SovGuard:  j41-jailbox config set'));
+      console.error(chalk.red('    2. Disable scanning:    re-run with --no-sovguard (writes will not be scanned)'));
+      console.error(chalk.red('    3. Read-only session:   re-run with --readonly'));
+      console.error('');
+      process.exit(1);
     } else {
+      // Read-only session: no writes are possible, so scanning is moot.
       feed.logSovguardDisabledWarning();
     }
 
