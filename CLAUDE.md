@@ -36,15 +36,44 @@ j41-jailbox ./my-project --uid <token> --write --scope src,tests
 | `src/types.ts` | Shared TypeScript types |
 | `src/index.ts` | Package exports |
 
-### Security Model (Three-Wall Isolation)
+### Security Model
 
 ```
 Buyer's machine
- +-- Wall 1: gVisor (Linux+KVM) or Docker Desktop VM (macOS)
-      +-- Wall 2: Docker (seccomp, cap-drop ALL, NetworkMode: none)
-           +-- Wall 3: Bubblewrap (VPS fallback)
-                +-- MCP server (3 tools: list, read, write)
+ +-- Wall 1: gVisor (Linux; auto-engaged whenever `runsc` is registered) or the
+ |           Docker Desktop VM (macOS/Windows). Refuses to start without a
+ |           kernel wall unless `--insecure` is passed.
+      +-- Wall 2: Docker hardening — custom seccomp (`/etc/j41` only on Linux),
+      |           cap-drop ALL, NetworkMode: none, read-only rootfs, non-root
+      |           user, AppArmor, private cgroup ns, masked /proc,
+      |           pid/mem/cpu limits, no-new-privileges
+      |    +-- Wall 3: bubblewrap, bundled in the self-built hardened image and
+      |    |           run by the entrypoint. Probes first and falls through to
+      |    |           the outer wall when nested userns is forbidden (gVisor).
+      |    |    +-- MCP server (3 tools: list, read, write) — the agent is
+      |    |        REMOTE and only speaks JSON-RPC; it has NO code execution
+      |    |        inside the container
 ```
+
+**Honest scope:**
+- The remote agent's only capability is 3 file tools through the relay. It cannot
+  execute code in the container, so the practical attack surface is the
+  mcp-server's path handling + the host-side relay/supervisor.
+- **bwrap is a real wall here, but only when it engages.** It ships inside the
+  hardened image and runs from the entrypoint — it is not the host's bwrap. Under
+  gVisor the nested unprivileged userns may be refused, in which case the
+  entrypoint execs directly and logs that it did. The banner reports what is
+  actually active for the session, never an aspirational count.
+- **seccomp is loaded from `/etc/j41` on Linux, with no `~/.j41` fallback** — that
+  path is user-writable. `@junction41/secure-setup` fails closed rather than
+  deploying somewhere the runtime will not read. A missing profile leaves
+  Docker's built-in default (never `unconfined`) and is reported as missing.
+- The host-side supervisor read is contained to projectDir (`safeReadCurrent`),
+  size/type-capped — an agent path cannot make the host read `/etc/passwd` or
+  OOM on `/dev/zero`.
+- In-repo writes that execute on the host later (`.git/hooks`, npm scripts,
+  Makefile, CI, Dockerfile, `.envrc`) are flagged `EXECUTES-ON-HOST`
+  (`classifySensitiveWrite`) and audit-logged as `write_sensitive_path`.
 
 ### Container Hardening (docker.ts)
 

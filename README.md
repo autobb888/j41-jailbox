@@ -51,6 +51,33 @@ inline JSON (the API does not read a file path the way the `docker` CLI does), s
 sessions on hosts that deploy `/etc/j41/seccomp-jailbox.json` no longer fail to
 start.
 
+## Security update — confinement review (v2.1.3)
+
+Focused hardening of the "a hired SovAgent reads/writes my repo and must not
+escape" guarantee. The agent is **remote** and only speaks 3 file tools
+(list/read/write) through the relay — it has **no code execution in the
+container** — so the practical attack surface is the MCP server's path handling
+plus the host-side relay/supervisor.
+
+**Host-side supervisor read is now contained.** The supervised write-approval
+flow read the *current* file contents on the **host** via
+`readFileSync(join(projectDir, agentPath))` with no `..` guard, size cap, or
+file-type check. An agent path like `../../../../etc/passwd` read host files
+into your terminal, and `/dev/zero` or a huge file could OOM/hang your machine —
+outside the container's limits. Now `safeReadCurrent` realpath-contains the read
+to the project, requires a regular file, and caps it at 10MB.
+
+**Sensitive-write highlighter.** Confinement keeps writes inside your repo, but
+in-repo files like `.git/hooks/*`, `package.json` scripts, `Makefile`, CI
+workflows, `Dockerfile`, and `.envrc` execute on your host *later*. Writes to
+these are flagged in the approval prompt (and the live feed in standard mode) as
+`EXECUTES-ON-HOST` so they get a closer look. Recorded in the audit log as
+`write_sensitive_path`.
+
+Repo confinement (`resolveSafe`) is covered by an adversarial escape-test battery
+(traversal, absolute paths, read/write *through* escaping symlinks).
+
+
 ## Security update — 2026-06-02 audit (v2.1.0)
 
 This release closes 5 highs + ~12 mediums/lows from the 2026-06-02 cross-repo security audit. Behavioral changes consumers should know about:
@@ -146,17 +173,20 @@ j41-jailbox ./my-project --uid abc123 --write --max-duration 1 --max-writes 20
 
 ### Three-Wall Isolation
 
-On first run, jailbox auto-installs security isolation via `@junction41/secure-setup`:
+On first run, jailbox guides you through installing isolation via `@junction41/secure-setup` (it is opt-in, not auto-run — see the v2.1.0 note above):
 
 ```
 Buyer's machine
- +-- Wall 1: gVisor (Linux + KVM) or Docker Desktop VM (macOS)
-      +-- Wall 2: Docker (seccomp, cap-drop ALL, NetworkMode: none)
-           +-- Wall 3: Bubblewrap (VPS fallback)
-                +-- MCP server (3 tools: list, read, write)
+ +-- Wall 1: gVisor — Linux (kvm platform w/ /dev/kvm, else systrap, no KVM
+ |           needed) or Docker Desktop VM (macOS)
+ +-- Wall 2: Docker hardening — custom seccomp (fail-closed: /etc/j41 only on
+ |           Linux), cap-drop ALL, NetworkMode: none, read-only rootfs, AppArmor,
+ |           pid/mem/cpu limits, no-new-privileges
+ +-- MCP server (3 tools: list, read, write) — the agent is REMOTE and only
+     speaks JSON-RPC; it has NO code execution inside the container
 ```
 
-No manual configuration needed. The setup runs once automatically.
+The startup banner reports how many of the **3 container walls** (gVisor / seccomp / AppArmor) are actually active so you aren't given a false sense of the sandbox on a stock host. Docker hardening is always applied. `bwrap`, if present on the host, is **not** one of the jailbox container's walls (the container runs `node` directly on node:alpine) — it is shown as host-only info and excluded from the score.
 
 ### Mount Security
 

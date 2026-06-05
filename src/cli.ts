@@ -14,6 +14,7 @@ import { preScan, isExcluded } from './pre-scan.js';
 import { DockerManager, getMcpServerPath, detectIsolationLayers } from './docker.js';
 import { RelayClient } from './relay-client.js';
 import { Supervisor } from './supervisor.js';
+import { classifySensitiveWrite } from './sensitive-paths.js';
 import { Feed } from './feed.js';
 import { SovGuardClient, SCAN_MAX_BYTES } from './sovguard.js';
 import type { SovGuardScanResult, SovGuardReport } from './sovguard.js';
@@ -763,6 +764,18 @@ try { if (docker.containerName) execSync(`docker rm -f ${docker.containerName}`,
       if (isWrite && !limiter.canWrite()) {
         blockOperation(limiter.blockReason(), limiter.blockReason());
         return;
+      }
+
+      // Confinement keeps writes inside the repo, but in-repo files like git
+      // hooks / npm scripts / Makefiles / CI / .envrc execute on the host later.
+      // Surface those in the live feed (supervised mode ALSO shows it in the
+      // approval prompt) so they get a closer look in any mode.
+      if (isWrite) {
+        const sensitive = classifySensitiveWrite(relPath);
+        if (sensitive.sensitive) {
+          feed.logError(`⚠ executes-on-host write [${sensitive.category}]: ${relPath} — ${sensitive.reason}`);
+          auditLog.record('write_sensitive_path', relPath, 0, sensitive.category || '');
+        }
       }
 
       // For supervised writes: intercept and prompt before executing

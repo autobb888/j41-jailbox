@@ -6,12 +6,64 @@
  */
 
 import { createInterface, Interface } from 'readline';
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, existsSync, realpathSync, statSync } from 'fs';
+import { resolve, sep } from 'path';
 import { structuredPatch } from 'diff';
 import chalk from 'chalk';
 import { DIFF_PREVIEW_LINES } from './types.js';
 import type { InputState } from './types.js';
+import { classifySensitiveWrite } from './sensitive-paths.js';
+
+// Cap how much of an existing file we'll load on the HOST to render a write
+// diff. Without this, an agent-supplied path pointing at /dev/zero (or a
+// legitimately huge file in the project) would make readFileSync allocate
+// unbounded and OOM/hang the buyer's machine — outside the container's limits.
+const MAX_DIFF_READ_BYTES = 10 * 1024 * 1024; // 10MB, matches mcp-server MAX_FILE_SIZE
+
+/**
+ * Resolve an agent-supplied write path to a host path for the diff preview,
+ * but ONLY if it stays inside projectDir and is a normal file small enough to
+ * read safely. The container's mcp-server is the authority on where writes
+ * actually land (resolveSafe); this guard exists because the supervisor reads
+ * the *current* contents on the HOST, where the container's isolation does not
+ * apply. Returns the prior content, or '' when the path escapes / is unreadable
+ * (the write itself is still independently gated by the container).
+ */
+export function safeReadCurrent(projectDir: string, relPath: string): string {
+  // Blunt reject: any `..` segment. The realpath containment below is the
+  // deeper guard, but rejecting `..` outright keeps the intent obvious.
+  if (relPath.includes('..')) return '';
+
+  const root = realpathSync(projectDir);
+  const abs = resolve(root, relPath);
+  if (abs !== root && !abs.startsWith(root + sep)) return ''; // pre-resolution escape
+
+  if (!existsSync(abs)) return '';
+  let real: string;
+  try {
+    real = realpathSync(abs);
+  } catch {
+    return '';
+  }
+  // Symlink must not escape the project root.
+  if (real !== root && !real.startsWith(root + sep)) return '';
+
+  let st;
+  try {
+    st = statSync(real);
+  } catch {
+    return '';
+  }
+  // Refuse anything that isn't a plain file (blocks /dev/zero, fifos, sockets).
+  if (!st.isFile()) return '';
+  if (st.size > MAX_DIFF_READ_BYTES) return '';
+
+  try {
+    return readFileSync(real, 'utf-8');
+  } catch {
+    return '';
+  }
+}
 
 export class Supervisor {
   private state: InputState = 'IDLE';
@@ -137,10 +189,10 @@ export class Supervisor {
     proposedContent: string,
     projectDir: string,
   ): Promise<boolean> {
-    const fullPath = join(projectDir, path);
-    const currentContent = existsSync(fullPath)
-      ? readFileSync(fullPath, 'utf-8')
-      : '';
+    // Host-side read is contained to projectDir + size/type-capped. A malicious
+    // agent path (../../etc/passwd, /dev/zero, a 2GB file) yields '' here rather
+    // than reading off the host or OOMing the buyer's machine.
+    const currentContent = safeReadCurrent(projectDir, path);
 
     // Generate diff
     const patch = structuredPatch(path, path, currentContent, proposedContent);
@@ -155,6 +207,15 @@ export class Supervisor {
     const sizeKB = (Buffer.byteLength(proposedContent, 'utf-8') / 1024).toFixed(1);
     console.log('');
     console.log(chalk.yellow(`WRITE ${path} (${sizeKB}KB)`));
+
+    // The agent can't escape the repo, but it CAN write in-repo files that run
+    // on your host later (git hooks, npm scripts, Makefiles, CI, .envrc...).
+    // Call those out so they get a harder look before approval.
+    const sensitive = classifySensitiveWrite(path);
+    if (sensitive.sensitive) {
+      console.log(chalk.red(`  ⚠ EXECUTES-ON-HOST [${sensitive.category}]: ${sensitive.reason}`));
+      console.log(chalk.red('    Review this write carefully — approving lets it run outside the sandbox later.'));
+    }
 
     // Show first N lines of diff
     const preview = diffLines.slice(0, DIFF_PREVIEW_LINES);
