@@ -19,6 +19,12 @@ export interface SovGuardScanMatch {
   flag: string;
 }
 
+export interface SovGuardScanContext {
+  path?: string;
+  executes_on_host?: boolean;
+  source?: string;
+}
+
 export interface SovGuardScanResult {
   safe: boolean;
   score: number;
@@ -27,6 +33,8 @@ export interface SovGuardScanResult {
   classification?: string;
   flags?: string[];
   matches?: SovGuardScanMatch[];
+  action?: 'allow' | 'warn' | 'block';
+  warnings?: string[];
 }
 
 export interface SovGuardReport {
@@ -135,7 +143,7 @@ export class SovGuardClient {
     return decrypted.toString('utf8');
   }
 
-  async scanContent(content: Buffer, mimeType: string): Promise<SovGuardScanResult | null> {
+  async scanContent(content: Buffer, mimeType: string, context?: SovGuardScanContext): Promise<SovGuardScanResult | null> {
     if (this._disabled) return null;
 
     if (content.length > SCAN_MAX_BYTES) {
@@ -148,10 +156,11 @@ export class SovGuardClient {
     const timer = setTimeout(() => controller.abort(), SCAN_TIMEOUT_MS);
 
     try {
-      const jsonBody = JSON.stringify({
-        content: content.toString('base64'),
-        mimeType,
-      });
+      const jsonBody = JSON.stringify(
+        context
+          ? { content: content.toString('base64'), mimeType, context }
+          : { content: content.toString('base64'), mimeType },
+      );
 
       const headers: Record<string, string> = {
         'X-API-Key': this.config.apiKey,

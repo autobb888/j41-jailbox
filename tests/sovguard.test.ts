@@ -168,3 +168,38 @@ describe('SovGuardClient', () => {
     });
   });
 });
+
+describe('scanContent context + action/warnings', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('includes context in the request body when provided', async () => {
+    let sentBody: any = null;
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: any) => {
+      sentBody = JSON.parse(init.body);
+      return new Response(JSON.stringify({ safe: true, score: 0, action: 'allow', warnings: [] }), { status: 200 });
+    }));
+    const client = new SovGuardClient({ apiKey: 'k', apiUrl: 'https://api.test' });
+    await client.scanContent(Buffer.from('x'), 'text/plain', { path: '.git/hooks/pre-commit', source: 'other_agent' });
+    expect(sentBody.context).toEqual({ path: '.git/hooks/pre-commit', source: 'other_agent' });
+  });
+
+  it('omits context when not provided', async () => {
+    let sentBody: any = null;
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: any) => {
+      sentBody = JSON.parse(init.body);
+      return new Response(JSON.stringify({ safe: true, score: 0 }), { status: 200 });
+    }));
+    const client = new SovGuardClient({ apiKey: 'k', apiUrl: 'https://api.test' });
+    await client.scanContent(Buffer.from('x'), 'text/plain');
+    expect('context' in sentBody).toBe(false);
+  });
+
+  it('passes through action/warnings from the response', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(JSON.stringify({ safe: true, score: 0.4, action: 'warn', warnings: ['code:download_and_execute:pipe_to_shell'] }), { status: 200 })));
+    const client = new SovGuardClient({ apiKey: 'k', apiUrl: 'https://api.test' });
+    const r = await client.scanContent(Buffer.from('curl x | sh'), 'text/plain', { path: 'install.sh' });
+    expect(r?.action).toBe('warn');
+    expect(r?.warnings).toContain('code:download_and_execute:pipe_to_shell');
+  });
+});
