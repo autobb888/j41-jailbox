@@ -767,7 +767,7 @@ try { if (docker.containerName) execSync(`docker rm -f ${docker.containerName}`,
           }
         } else {
           const mimeType = 'text/plain';
-          const scanResult = await sovguardClient.scanContent(writeContent, mimeType);
+          const scanResult = await sovguardClient.scanContent(writeContent, mimeType, { path: relPath, source: 'other_agent' });
 
           if (scanResult === null) {
             if (sovguardClient.consecutiveFailures >= 3) {
@@ -879,6 +879,10 @@ try { if (docker.containerName) execSync(`docker rm -f ${docker.containerName}`,
               feed.logStatus(`False positive report queued for ${relPath}`);
             }
           } else {
+            // safe === true. Surface a non-blocking code-exec warning (allowed).
+            if (scanResult.action === 'warn') {
+              feed.logSovguardWarn(relPath, scanResult.reason);
+            }
             runtimeSovguardScore = scanResult.score;
           }
         }

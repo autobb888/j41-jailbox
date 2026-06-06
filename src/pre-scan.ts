@@ -59,7 +59,7 @@ export async function preScan(projectDir: string, sovguard?: SovGuardConfig): Pr
         const ext = extname(filePath).toLowerCase();
         const content = readFileSync(filePath);
         const mimeType = MIME_MAP[ext] || 'text/plain';
-        const result = await client.scanContent(content, mimeType);
+        const result = await client.scanContent(content, mimeType, { path: relPath });
         scanned++;
 
         // Progress indicator (overwrite line)
