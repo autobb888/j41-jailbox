@@ -81,3 +81,16 @@ describe('Feed', () => {
     expect(output).toContain('too large for scan');
   });
 });
+
+describe('logSovguardWarn', () => {
+  it('prints a non-blocking warning with the path and reason', () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const feed = new Feed(false);
+    feed.logSovguardWarn('install.sh', 'download and execute (warn)');
+    expect(spy).toHaveBeenCalled();
+    const out = spy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('install.sh');
+    expect(out.toLowerCase()).toContain('warn');
+    spy.mockRestore();
+  });
+});

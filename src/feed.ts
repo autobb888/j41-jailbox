@@ -59,6 +59,10 @@ export class Feed {
     console.log(`${this.timestamp()}  ${chalk.red('ERROR')}  ${message}`);
   }
 
+  logSovguardWarn(path: string, reason?: string): void {
+    console.warn(chalk.yellow(`⚠ SovGuard WARN  ${path}${reason ? `  — ${reason}` : ''} (allowed)`));
+  }
+
   logSovguardBlock(path: string, score: number, reason?: string): void {
     this.stats.sovguardScans++;
     this.stats.sovguardBlocks++;
