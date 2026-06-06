@@ -93,4 +93,12 @@ describe('logSovguardWarn', () => {
     expect(out.toLowerCase()).toContain('warn');
     spy.mockRestore();
   });
+
+  it('increments sovguardScans counter', () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const feed = new Feed(false);
+    feed.logSovguardWarn('install.sh', 'download and execute (warn)');
+    expect(feed.getStats().sovguardScans).toBe(1);
+    spy.mockRestore();
+  });
 });

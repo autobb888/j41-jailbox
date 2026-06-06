@@ -60,6 +60,7 @@ export class Feed {
   }
 
   logSovguardWarn(path: string, reason?: string): void {
+    this.stats.sovguardScans++;
     console.warn(chalk.yellow(`⚠ SovGuard WARN  ${path}${reason ? `  — ${reason}` : ''} (allowed)`));
   }
 
