@@ -132,6 +132,27 @@ export function parseArgs(argv: string[]): JailboxConfig {
   };
 }
 
+/**
+ * Refuse to run the dispatcher as root. Running as root means (a) a sandbox
+ * escape would land with full host privileges instead of an unprivileged
+ * account, and (b) the container would be launched as root (uid 0 maps to
+ * `User: 0:0`), defeating the never-root-container guarantee. Files written by
+ * the agent would also be root-owned on the host. `getuid` is undefined on
+ * Windows — there is no root concept there, so we no-op.
+ */
+export function assertNotRoot(
+  getuid: (() => number) | undefined = (process.getuid ? process.getuid.bind(process) : undefined),
+): void {
+  if (typeof getuid === 'function' && getuid() === 0) {
+    console.error(chalk.red('\n✗ Refusing to run j41-jailbox as root.'));
+    console.error('  A sandbox escape from root would have full host privileges, and the');
+    console.error('  container would be launched as root. Re-run as a normal (non-root) user.');
+    console.error('  If you used sudo, drop it. If you need Docker access, add your user to');
+    console.error('  the `docker` group: sudo usermod -aG docker "$USER" && newgrp docker\n');
+    process.exit(1);
+  }
+}
+
 function isDockerAvailable(): boolean {
   try {
     execSync('docker info', { stdio: 'ignore' });
@@ -204,6 +225,9 @@ export function checkGitStatus(projectDir: string): void {
 }
 
 export async function run(config: JailboxConfig): Promise<void> {
+  // Hard gate: never run the dispatcher (or therefore the container) as root.
+  assertNotRoot();
+
   const feed = new Feed(config.verbose);
   const docker = new DockerManager();
   const relay = new RelayClient();
@@ -377,24 +401,46 @@ try { if (docker.containerName) execSync(`docker rm -f ${docker.containerName}`,
     // ── 1. Git check ───────────────────────────────────────────
     checkGitStatus(config.projectDir);
 
-    // ── 1a. Isolation layer banner ────────────────────────────
-    // The README describes a multi-wall sandbox; surface what is ACTUALLY
-    // active so the buyer doesn't assume gVisor/AppArmor/seccomp/bwrap are
-    // present on a stock Docker host. Docker hardening below is always applied.
+    // ── 1a. Provision the hardened sandbox image (Wall 3 / bubblewrap) ──
+    // Build it up front (idempotent) so the isolation banner below reflects
+    // reality on first run rather than reporting bubblewrap as missing.
+    feed.logStatus('Provisioning hardened sandbox image (one-time build on first run)...');
+    await docker.ensureHardenedImage();
+
+    // ── 1c. Isolation status (honest) ─────────────────────────
+    // Report what ACTUALLY protects this session so the buyer is never given a
+    // false sense of a fuller sandbox than is active. Inside Docker the kernel
+    // wall is gVisor (Linux) or the Docker-Desktop VM (macOS); bubblewrap is
+    // bundled in our image but only engages on a no-Docker/VPS deployment — it
+    // cannot nest inside this cap-dropped container, so it is NOT counted as an
+    // in-Docker wall here.
     const layers = detectIsolationLayers();
-    if (layers.missing.length > 0) {
+    const onLinux = process.platform === 'linux';
+    const kernelWall = layers.gvisor || !onLinux; // gVisor, or Docker-Desktop VM off-Linux
+    console.log('');
+    console.log(chalk.cyan('  Sandbox status:'));
+    console.log('    Always-on Docker hardening: cap-drop ALL, network=none, read-only rootfs,');
+    console.log('    non-root user, private cgroup ns, masked /proc paths, pids/mem limits.');
+    console.log(`    Kernel wall (gVisor):       ${layers.gvisor ? chalk.green('active') : (onLinux ? chalk.yellow('NOT active') : chalk.green('Docker-Desktop VM'))}`);
+    console.log(`    AppArmor profile:           ${layers.apparmor ? chalk.green('active') : chalk.yellow('not loaded')}`);
+    console.log(`    seccomp profile:            ${layers.seccomp ? chalk.green('custom (j41)') : chalk.gray('Docker default')}`);
+    // bwrap nests only when the custom seccomp profile permits unprivileged
+    // userns (Docker's default profile blocks it); otherwise it cleanly falls
+    // back to the gVisor/Docker wall. Per-session truth is logged by the
+    // entrypoint to the container feed.
+    const bwrapEngages = layers.bwrap && layers.seccomp;
+    console.log(`    bubblewrap (Wall 3):        ${bwrapEngages ? chalk.green('engages (nested re-sandbox)') : chalk.gray('bundled; needs j41 seccomp to nest — falls back to gVisor/Docker')}`);
+    if (onLinux && !layers.gvisor) {
       console.log('');
-      console.log(chalk.yellow(`⚠ Sandbox isolation: ${layers.active}/4 layers active.`));
-      for (const m of layers.missing) console.log(chalk.yellow(`    missing: ${m}`));
-      console.log(chalk.yellow('  Docker hardening (cap-drop, no-network, read-only rootfs) is still applied.'));
-      console.log(chalk.yellow('  Install the rest via: npx @junction41/secure-setup --jailbox'));
-      console.log('');
-      if (config.strict) {
-        console.error(chalk.red('--strict: refusing to start with missing isolation layers.'));
-        process.exit(1);
-      }
-    } else {
-      feed.logStatus('Sandbox isolation: 4/4 layers active');
+      console.log(chalk.yellow('  ⚠ No gVisor kernel wall. The container relies on Docker\'s shared-kernel'));
+      console.log(chalk.yellow('    boundary — strong, but not escape-proof against a kernel exploit. For an'));
+      console.log(chalk.yellow('    UNTRUSTED agent, install gVisor: npx @junction41/secure-setup --jailbox'));
+    }
+    console.log('');
+    if (config.strict && (!kernelWall || !layers.apparmor || !layers.seccomp)) {
+      console.error(chalk.red('--strict: refusing to start without a full isolation stack'));
+      console.error(chalk.red(`  (kernel wall: ${kernelWall ? 'ok' : 'MISSING'}, AppArmor: ${layers.apparmor ? 'ok' : 'MISSING'}, seccomp: ${layers.seccomp ? 'ok' : 'default'}).`));
+      process.exit(1);
     }
 
     // ── 1b. SovGuard credentials ─────────────────────────────

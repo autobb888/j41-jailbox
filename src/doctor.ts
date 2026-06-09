@@ -7,6 +7,7 @@ import chalk from 'chalk';
 import { existsSync, statSync } from 'fs';
 import { join } from 'path';
 import { readConfig, CONFIG_FILE } from './config.js';
+import { detectIsolationLayers, isHardenedImageBuilt, getHardenedImageTag } from './docker.js';
 
 interface CheckResult {
   name: string;
@@ -44,12 +45,36 @@ export async function runDoctor(): Promise<void> {
     checks.push({ name: 'Docker daemon', status: 'fail', message: 'not running — start Docker Desktop or `sudo systemctl start docker`' });
   }
 
-  // 4. Docker image available
+  // 4. Not running as root
+  const uid = typeof process.getuid === 'function' ? process.getuid() : undefined;
+  if (uid === 0) {
+    checks.push({ name: 'Run user', status: 'fail', message: 'running as root — jailbox refuses to run as root (re-run as a normal user)' });
+  } else {
+    checks.push({ name: 'Run user', status: 'pass', message: uid === undefined ? 'non-root' : `non-root (uid ${uid})` });
+  }
+
+  // 5. Hardened sandbox image (Wall 3 / bubblewrap) built
+  if (isHardenedImageBuilt()) {
+    checks.push({ name: 'Hardened image', status: 'pass', message: `${getHardenedImageTag()} built (bubblewrap bundled)` });
+  } else {
+    checks.push({ name: 'Hardened image', status: 'warn', message: `${getHardenedImageTag()} not built — built automatically on first run` });
+  }
+
+  // 6. Kernel-isolation layers
   try {
-    execSync('docker image inspect node:18-alpine', { stdio: 'pipe' });
-    checks.push({ name: 'Docker image', status: 'pass', message: 'node:18-alpine cached locally' });
+    const layers = detectIsolationLayers();
+    if (layers.gvisor) {
+      checks.push({ name: 'Kernel isolation', status: 'pass', message: 'gVisor active (kernel wall)' });
+    } else if (process.platform !== 'linux') {
+      checks.push({ name: 'Kernel isolation', status: 'pass', message: 'Docker Desktop VM (kernel wall)' });
+    } else {
+      // No gVisor on Linux: only Docker's shared-kernel boundary. bubblewrap is
+      // bundled but cannot nest inside the cap-dropped container, so it does NOT
+      // substitute for a kernel wall here.
+      checks.push({ name: 'Kernel isolation', status: 'warn', message: 'no gVisor — Docker shared-kernel only; install gVisor for untrusted agents' });
+    }
   } catch {
-    checks.push({ name: 'Docker image', status: 'warn', message: 'node:18-alpine not cached — will be pulled on first run' });
+    checks.push({ name: 'Kernel isolation', status: 'warn', message: 'could not inspect isolation layers' });
   }
 
   // 5. Config file

@@ -2,6 +2,41 @@
 
 Connect hired AI agents to your local project through [Junction41](https://app.junction41.io).
 
+## Sandbox hardening update
+
+This release tightens the agent-isolation boundary and makes the multi-wall
+sandbox self-provisioning. See **[PLATFORMS.md](./PLATFORMS.md)** for the full
+Linux/macOS/Windows support matrix.
+
+**Refuses to run as root, and the container is never root.** The CLI exits if
+launched as root, and the container always runs as an unprivileged user (the
+host uid on Linux; the image's non-root `node` user on macOS/Windows).
+
+**Self-provisioned hardened image with bundled bubblewrap (Wall 3).** jailbox
+builds its own hardened image (`docker/Dockerfile.jailbox`) on first run instead
+of depending on host-preinstalled tooling, and **verifies bubblewrap is present
+before use** — it refuses to run a sandbox image missing its sandbox tool. On
+gVisor-default hosts (where the legacy Docker builder drops files when it commits
+under `runsc`) the image is built via a run-commit path under a standard runtime.
+
+**Additional kernel-escape hardening.** Private cgroup namespace, explicit masked
+/ read-only `/proc` paths, and `nodev` tmpfs are added on top of the always-on
+`cap-drop ALL`, `network=none`, read-only rootfs, and pids/memory limits.
+
+**Honest isolation reporting.** The startup banner and `doctor` report the walls
+that are *actually* active for this session (gVisor / Docker-Desktop VM, AppArmor,
+seccomp, and whether bubblewrap engaged), rather than an aspirational count.
+
+**Cross-platform robustness (one release for all three OSes).** Windows
+drive-letter paths are translated to a Docker-safe bind form, the Docker
+connection auto-selects the Windows named pipe vs Unix socket, and the pinned
+base image is multi-arch (`amd64` + `arm64`).
+
+**Bug fix:** the custom seccomp profile is now passed to the Docker Engine API as
+inline JSON (the API does not read a file path the way the `docker` CLI does), so
+sessions on hosts that deploy `/etc/j41/seccomp-jailbox.json` no longer fail to
+start.
+
 ## Security update — 2026-06-02 audit (v2.1.0)
 
 This release closes 5 highs + ~12 mediums/lows from the 2026-06-02 cross-repo security audit. Behavioral changes consumers should know about:
