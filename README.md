@@ -23,6 +23,20 @@ under `runsc`) the image is built via a run-commit path under a standard runtime
 / read-only `/proc` paths, and `nodev` tmpfs are added on top of the always-on
 `cap-drop ALL`, `network=none`, read-only rootfs, and pids/memory limits.
 
+**Refuses to start without a kernel wall by default (breaking).** On Linux with
+no gVisor runtime registered, the session now **refuses to start** rather than
+silently running with only Docker's shared-kernel boundary. Install gVisor
+(`npx @junction41/secure-setup --jailbox`) or pass `--insecure` to explicitly
+accept a Docker-only sandbox (never for untrusted agents). macOS/Windows are
+unaffected — the Docker Desktop VM is always a kernel wall.
+
+**gVisor auto-engages whenever it is registered.** Previously the container only
+used gVisor when `runsc` was the Docker daemon *default* runtime; now jailbox
+opts into `Runtime: runsc` automatically whenever `runsc` is registered at all,
+so you don't have to make it the daemon default. (gVisor still cannot be
+*installed* by the CLI — that is a privileged host operation handled by
+`@junction41/secure-setup`.)
+
 **Honest isolation reporting.** The startup banner and `doctor` report the walls
 that are *actually* active for this session (gVisor / Docker-Desktop VM, AppArmor,
 seccomp, and whether bubblewrap engaged), rather than an aspirational count.
@@ -87,6 +101,8 @@ j41-jailbox ./my-project --uid <token> --read --write --supervised
 | `--resume <token>` | Reconnect after disconnect |
 | `--sovguard-key <key>` | SovGuard API key for file scanning |
 | `--sovguard-url <url>` | SovGuard API URL (default: `https://api.sovguard.io`) |
+| `--strict` | Refuse to start unless the full isolation stack is active (kernel wall + AppArmor + seccomp) |
+| `--insecure` | Allow running **without** a kernel-isolation wall (Linux without gVisor). Default refuses. **NOT for untrusted agents.** |
 
 ## Commands
 

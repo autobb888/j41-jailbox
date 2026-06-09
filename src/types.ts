@@ -40,6 +40,8 @@ export interface JailboxConfig {
   _cliSovguardUrl?: string;
   /** Abort startup if any expected isolation layer (gVisor/AppArmor/seccomp/bwrap) is missing. */
   strict?: boolean;
+  /** Explicitly allow running WITHOUT a kernel-isolation wall (no gVisor on Linux). Default is to refuse. NOT for untrusted agents. */
+  insecure?: boolean;
   /** Buyer explicitly disabled SovGuard scanning. Must be explicit (vs. silently skipped) for a write session to start. */
   noSovguard?: boolean;
 }

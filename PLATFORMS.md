@@ -36,10 +36,25 @@ private cgroup namespace, masked `/proc` paths, pids/memory limits).
 
 Notably, **macOS and Windows get a hardware-virtualized VM boundary for free**,
 which is generally a stronger Wall 1 than gVisor. The host that needs the most
-attention is **plain Linux without gVisor**, where Wall 1 is Docker's shared
-kernel — strong, but not escape-proof against a kernel exploit. For an untrusted
-agent on Linux, install gVisor (or run with `--strict`, which refuses to start
-without a full isolation stack).
+attention is **plain Linux without gVisor**.
+
+**By default, Linux without a kernel wall refuses to start.** If no gVisor
+runtime is registered, the session aborts rather than running with only Docker's
+shared-kernel boundary. Your options:
+
+- **Install gVisor (recommended):** `npx @junction41/secure-setup --jailbox`.
+  Once `runsc` is registered, jailbox engages it automatically — it does **not**
+  need to be the Docker daemon's default runtime.
+- **`--insecure`:** explicitly accept a Docker-only sandbox. Use only for code
+  you trust; never for an untrusted agent.
+- **`--strict`:** the opposite — refuse unless the *full* stack (kernel wall +
+  AppArmor + seccomp) is active. `--strict` overrides `--insecure` if both are
+  passed.
+
+gVisor cannot be installed by the CLI itself: registering a Docker runtime is a
+privileged, host-level operation (it edits `/etc/docker/daemon.json` and restarts
+the daemon), which is why it is delegated to `@junction41/secure-setup`. jailbox
+only detects and uses `runsc`.
 
 The startup banner reports the **actual** active walls for the current session,
 and the container entrypoint logs whether bubblewrap engaged or fell back — so

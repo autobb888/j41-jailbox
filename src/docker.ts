@@ -127,10 +127,17 @@ function buildJailboxSecurityOpt(): string[] {
 
 function detectGvisorRuntime(): string | undefined {
   try {
-    const rt = execSync('docker info --format "{{.DefaultRuntime}}"', {
+    const def = execSync('docker info --format "{{.DefaultRuntime}}"', {
       encoding: 'utf8', timeout: 5000,
     }).trim();
-    return rt === 'runsc' ? 'runsc' : undefined;
+    if (def === 'runsc') return 'runsc';
+    // Registered but not the daemon default? Still usable per-container via
+    // `Runtime: 'runsc'`, so engage gVisor automatically whenever it is
+    // installed — the buyer does not have to make runsc the daemon default.
+    const runtimes = execSync('docker info --format "{{json .Runtimes}}"', {
+      encoding: 'utf8', timeout: 5000,
+    });
+    return /"runsc"|[\s\[]runsc[:\s\]]/.test(runtimes) ? 'runsc' : undefined;
   } catch {
     return undefined;
   }

@@ -64,6 +64,7 @@ export function parseArgs(argv: string[]): JailboxConfig {
     .option('--max-writes <n>', 'Max file writes per session', parseInt)
     .option('--max-duration <hours>', 'Max session duration in hours', parseFloat)
     .option('--strict', 'Abort if any expected isolation layer (gVisor/AppArmor/seccomp/bwrap) is missing')
+    .option('--insecure', 'Allow running WITHOUT a kernel-isolation wall (no gVisor on Linux). Default refuses. NOT for untrusted agents.')
     .option('--no-sovguard', 'Disable SovGuard content scanning (must be explicit — writes are otherwise blocked)')
     .parse(argv);
 
@@ -128,6 +129,7 @@ export function parseArgs(argv: string[]): JailboxConfig {
     _cliSovguardKey: opts.sovguardKey,
     _cliSovguardUrl: opts.sovguardUrl,
     strict: !!opts.strict,
+    insecure: !!opts.insecure,
     noSovguard: opts.sovguard === false, // commander sets `sovguard: false` for --no-sovguard
   };
 }
@@ -430,17 +432,36 @@ try { if (docker.containerName) execSync(`docker rm -f ${docker.containerName}`,
     // entrypoint to the container feed.
     const bwrapEngages = layers.bwrap && layers.seccomp;
     console.log(`    bubblewrap (Wall 3):        ${bwrapEngages ? chalk.green('engages (nested re-sandbox)') : chalk.gray('bundled; needs j41 seccomp to nest — falls back to gVisor/Docker')}`);
-    if (onLinux && !layers.gvisor) {
-      console.log('');
-      console.log(chalk.yellow('  ⚠ No gVisor kernel wall. The container relies on Docker\'s shared-kernel'));
-      console.log(chalk.yellow('    boundary — strong, but not escape-proof against a kernel exploit. For an'));
-      console.log(chalk.yellow('    UNTRUSTED agent, install gVisor: npx @junction41/secure-setup --jailbox'));
-    }
     console.log('');
+
+    // ── Kernel-wall gate ──────────────────────────────────────
+    // --strict is the strictest: refuse on ANY missing layer (and it wins over
+    // --insecure if both are passed). Otherwise the DEFAULT is to refuse when no
+    // kernel-isolation wall is active (Linux without gVisor); --insecure is the
+    // explicit, documented override for that one case.
     if (config.strict && (!kernelWall || !layers.apparmor || !layers.seccomp)) {
-      console.error(chalk.red('--strict: refusing to start without a full isolation stack'));
+      console.error(chalk.red('✗ --strict: refusing to start without a full isolation stack'));
       console.error(chalk.red(`  (kernel wall: ${kernelWall ? 'ok' : 'MISSING'}, AppArmor: ${layers.apparmor ? 'ok' : 'MISSING'}, seccomp: ${layers.seccomp ? 'ok' : 'default'}).`));
+      if (config.insecure) console.error(chalk.red('  (--insecure is ignored when --strict is set.)'));
       process.exit(1);
+    }
+
+    if (!kernelWall) {
+      // Linux host with no gVisor runtime registered.
+      if (!config.insecure) {
+        console.error(chalk.red('✗ Refusing to start: no kernel-isolation wall is active.'));
+        console.error(chalk.red('  Only Docker\'s shared-kernel boundary protects this session — not'));
+        console.error(chalk.red('  escape-proof against a kernel exploit, and unsafe for an untrusted agent.'));
+        console.error('');
+        console.error('  Fix (recommended):  npx @junction41/secure-setup --jailbox   # installs gVisor');
+        console.error('  Override (only for code you trust):  re-run with --insecure');
+        console.error('');
+        process.exit(1);
+      }
+      console.log(chalk.red('  ⚠ --insecure: running WITHOUT a kernel wall (Docker shared kernel only).'));
+      console.log(chalk.red('    Do NOT use this for an untrusted agent. Install gVisor for real isolation:'));
+      console.log(chalk.red('    npx @junction41/secure-setup --jailbox'));
+      console.log('');
     }
 
     // ── 1b. SovGuard credentials ─────────────────────────────

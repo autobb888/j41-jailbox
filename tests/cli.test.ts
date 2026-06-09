@@ -88,6 +88,17 @@ describe('parseArgs', () => {
     const config = parseArgs(['node', 'j41-jailbox', tempDir, '--uid', 'uid-xyz']);
     expect(config.permissions.read).toBe(true);
   });
+
+  it('defaults insecure/strict to false', () => {
+    const config = parseArgs(['node', 'j41-jailbox', tempDir, '--uid', 'uid-xyz']);
+    expect(config.insecure).toBe(false);
+    expect(config.strict).toBe(false);
+  });
+
+  it('sets insecure with --insecure', () => {
+    const config = parseArgs(['node', 'j41-jailbox', tempDir, '--uid', 'uid-xyz', '--insecure']);
+    expect(config.insecure).toBe(true);
+  });
 });
 
 // Contract: write-scan warn path — action:'warn' is ALLOWED (non-blocking) and
